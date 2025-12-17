@@ -306,6 +306,24 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       opacity: 0.5;
       cursor: not-allowed;
     }
+    .cancel-btn {
+      background: var(--vscode-errorForeground);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 0.15s;
+      display: none;
+    }
+    .cancel-btn.show {
+      display: block;
+    }
+    .cancel-btn:hover {
+      opacity: 0.9;
+    }
     
     /* 代码块 */
     pre {
@@ -546,6 +564,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     <div class="input-wrapper">
       <textarea id="input" placeholder="输入消息，按 Enter 发送..." rows="1"></textarea>
       <button class="send-btn" id="sendBtn">发送</button>
+      <button class="cancel-btn" id="cancelBtn">⏹ 停止</button>
     </div>
   </div>
 
@@ -623,6 +642,19 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       
       var isProcessing = false;
       var currentAssistantMessage = null;
+      var cancelBtn = document.getElementById('cancelBtn');
+
+      function setProcessing(processing) {
+        isProcessing = processing;
+        sendBtn.disabled = processing;
+        if (processing) {
+          sendBtn.style.display = 'none';
+          cancelBtn.classList.add('show');
+        } else {
+          sendBtn.style.display = 'block';
+          cancelBtn.classList.remove('show');
+        }
+      }
 
       function sendMessage() {
         var content = inputEl.value.trim();
@@ -634,10 +666,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         addMessage('user', content);
         vscode.postMessage({ type: 'user_message', content: content });
         inputEl.value = '';
-        isProcessing = true;
-        sendBtn.disabled = true;
+        setProcessing(true);
         currentAssistantMessage = null;
       }
+      
+      cancelBtn.onclick = function() {
+        vscode.postMessage({ type: 'cancel' });
+        setProcessing(false);
+        addMessage('error', '⏹ 已停止生成');
+      };
 
       function formatText(text) {
         if (!text) return '';
@@ -837,12 +874,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               }
             }
             currentAssistantMessage = null;
-            isProcessing = false;
-            sendBtn.disabled = false;
+            setProcessing(false);
           } else if (evt.type === 'error') {
             addMessage('error', '❌ ' + evt.message);
-            isProcessing = false;
-            sendBtn.disabled = false;
+            setProcessing(false);
           } else if (evt.type === 'token') {
             if (!currentAssistantMessage) {
               currentAssistantMessage = addMessage('assistant', '', '');
