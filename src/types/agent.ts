@@ -27,7 +27,8 @@ export type AgentEvent =
   | { type: 'step_complete'; step: number; result: string }
   | { type: 'answer'; content: string }
   | { type: 'error'; message: string }
-  | { type: 'token'; content: string };
+  | { type: 'token'; content: string }
+  | { type: 'skill'; name: string; description?: string };
 
 /**
  * Agent 引擎接口

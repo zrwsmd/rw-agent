@@ -113,12 +113,19 @@ export class AgentEngineImpl implements IAgentEngine {
       // 添加系统提示和 Skills
       let systemPrompt = '你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。';
       
-      // 注入匹配的 Skills
+      // 注入匹配的 Skills - 使用最新的用户消息
       if (this.skillsManager) {
-        const userMessage = context.find(m => m.role === 'user')?.content || '';
-        const skillsPrompt = this.skillsManager.generateSkillsPrompt(userMessage);
-        if (skillsPrompt) {
+        // 找到最后一条 user 消息（最新的）
+        const userMessages = context.filter(m => m.role === 'user');
+        const latestUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
+        const matchedSkills = this.skillsManager.matchSkills(latestUserMessage);
+        if (matchedSkills.length > 0) {
+          const skillsPrompt = this.skillsManager.generateSkillsPrompt(latestUserMessage);
           systemPrompt += skillsPrompt;
+          // 发送 skill 事件通知 UI
+          for (const skill of matchedSkills) {
+            yield { type: 'skill', name: skill.name, description: skill.config.description };
+          }
         }
       }
       
@@ -173,8 +180,15 @@ export class AgentEngineImpl implements IAgentEngine {
     // 注入 Skills 到 context
     let skillsPrompt = '';
     if (this.skillsManager) {
-      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
-      console.log('[AgentEngine] Skills 注入:', skillsPrompt ? '有匹配' : '无匹配');
+      const matchedSkills = this.skillsManager.matchSkills(goal);
+      if (matchedSkills.length > 0) {
+        skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
+        console.log('[AgentEngine] Skills 注入:', matchedSkills.map(s => s.name));
+        // 发送 skill 事件通知 UI
+        for (const skill of matchedSkills) {
+          yield { type: 'skill', name: skill.name, description: skill.config.description };
+        }
+      }
     }
 
     let finalAnswer = '';

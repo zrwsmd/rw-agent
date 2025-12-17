@@ -167,48 +167,58 @@ export class SkillsManager {
       }
     }
 
+    // 英文停用词列表（常见介词、冠词、连词等）
+    const stopWords = new Set([
+      'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+      'to', 'of', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'as',
+      'it', 'if', 'or', 'and', 'but', 'not', 'no', 'so', 'do', 'does',
+      'this', 'that', 'these', 'those', 'can', 'will', 'would', 'could',
+      'should', 'may', 'might', 'must', 'have', 'has', 'had', 'having',
+      'use', 'uses', 'used', 'using', 'all', 'any', 'each', 'every',
+    ]);
+    
     // 从 name 提取关键词
     const nameLower = name.toLowerCase();
     if (!keywords.includes(nameLower)) {
       keywords.push(nameLower);
     }
     // 拆分连字符
-    const nameWords = nameLower.split('-').filter(w => w.length > 0);
+    const nameWords = nameLower.split('-').filter(w => w.length >= 3 && !stopWords.has(w));
     for (const word of nameWords) {
       if (!keywords.includes(word)) {
         keywords.push(word);
       }
     }
     
-    // 从 description 提取关键词（长度 >= 2）
-    if (description) {
-      const descLower = description.toLowerCase();
-      const words = descLower.split(/[\s,./()-]+/).filter(w => w.length >= 2);
-      console.log('[SkillsManager] 从 description 提取的词:', words);
-      for (const word of words) {
-        if (!keywords.includes(word)) {
-          keywords.push(word);
+    // 从 name 提取中文关键词（完整词组）
+    const nameChineseChars = name.match(/[\u4e00-\u9fa5]+/g);
+    if (nameChineseChars) {
+      for (const chars of nameChineseChars) {
+        if (chars.length >= 2 && !keywords.includes(chars)) {
+          keywords.push(chars);
         }
       }
     }
     
-    // 添加常见的相关关键词
-    const additionalKeywords: Record<string, string[]> = {
-      'jpg': ['jpeg', '图片', '图像', 'image', 'photo', '照片', '转换', 'convert', '.jpg'],
-      'png': ['图片', '图像', 'image', '转换', 'convert', '.png'],
-      'jpeg': ['jpg', '图片', '图像', 'image', 'photo', '照片', '转换', 'convert'],
-      'pdf': ['文档', 'document', '生成', 'generate'],
-      'convert': ['转换', '转化', '变换'],
-      'image': ['图片', '图像', '照片'],
-      'images': ['图片', '图像', '照片', 'image'],
-    };
-    
-    for (const keyword of [...keywords]) {
-      const additional = additionalKeywords[keyword];
-      if (additional) {
-        for (const add of additional) {
-          if (!keywords.includes(add)) {
-            keywords.push(add);
+    // 从 description 提取关键词
+    if (description) {
+      const descLower = description.toLowerCase();
+      // 英文词汇：长度 >= 3，且不是停用词
+      const englishWords = descLower.split(/[\s,./()-]+/).filter(
+        w => w.length >= 3 && /^[a-z0-9]+$/.test(w) && !stopWords.has(w)
+      );
+      for (const word of englishWords) {
+        if (!keywords.includes(word)) {
+          keywords.push(word);
+        }
+      }
+      
+      // 中文词组（完整提取，长度 >= 2）
+      const chineseChars = description.match(/[\u4e00-\u9fa5]+/g);
+      if (chineseChars) {
+        for (const chars of chineseChars) {
+          if (chars.length >= 2 && !keywords.includes(chars)) {
+            keywords.push(chars);
           }
         }
       }
@@ -336,11 +346,53 @@ export class SkillsManager {
     console.log('[SkillsManager] 匹配消息:', messageLower);
     console.log('[SkillsManager] 可用 skills:', Array.from(this.skills.keys()));
     
-    const matched = Array.from(this.skills.values()).filter((skill) => {
-      const hasMatch = skill.keywords.some((keyword) => messageLower.includes(keyword.toLowerCase()));
-      console.log('[SkillsManager] Skill:', skill.name, '关键词:', skill.keywords, '匹配:', hasMatch);
-      return hasMatch;
-    });
+    // 提取用户消息中的词（英文按空格/标点分割，中文按连续字符）
+    const messageWords = new Set<string>();
+    // 英文词（只保留长度 >= 3 的）
+    const englishWords = messageLower.match(/[a-z][a-z0-9]*/g) || [];
+    englishWords.filter(w => w.length >= 3).forEach(w => messageWords.add(w));
+    // 中文词组（只保留长度 >= 2 的）
+    const chineseWords = messageLower.match(/[\u4e00-\u9fa5]+/g) || [];
+    chineseWords.filter(w => w.length >= 2).forEach(w => messageWords.add(w));
+    
+    console.log('[SkillsManager] 用户消息词汇:', Array.from(messageWords));
+    
+    const matched: Skill[] = [];
+    
+    for (const skill of this.skills.values()) {
+      let matchedKeyword: string | null = null;
+      
+      for (const keyword of skill.keywords) {
+        const kw = keyword.toLowerCase();
+        const isChinese = /[\u4e00-\u9fa5]/.test(kw);
+        const minLen = isChinese ? 2 : 3;
+        
+        if (kw.length < minLen) continue;
+        
+        // 英文：完整词匹配
+        if (!isChinese && messageWords.has(kw)) {
+          matchedKeyword = kw;
+          break;
+        }
+        
+        // 中文：检查用户消息的中文词是否包含关键词
+        if (isChinese) {
+          for (const word of messageWords) {
+            if (/[\u4e00-\u9fa5]/.test(word) && word.includes(kw)) {
+              matchedKeyword = kw;
+              break;
+            }
+          }
+          if (matchedKeyword) break;
+        }
+      }
+      
+      console.log('[SkillsManager] Skill:', skill.name, '关键词:', skill.keywords.slice(0, 5), '匹配词:', matchedKeyword);
+      
+      if (matchedKeyword) {
+        matched.push(skill);
+      }
+    }
     
     console.log('[SkillsManager] 匹配结果:', matched.map(s => s.name));
     return matched;

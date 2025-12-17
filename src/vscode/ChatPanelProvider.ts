@@ -256,6 +256,32 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
     .plan-step:last-child { border-bottom: none; }
     
+    /* Skill 提示 */
+    .message.skill {
+      background: linear-gradient(135deg, rgba(100, 200, 100, 0.15), rgba(100, 200, 100, 0.05));
+      border-left: 3px solid var(--vscode-terminal-ansiGreen);
+      font-size: 12px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .skill-icon {
+      font-size: 16px;
+    }
+    .skill-info {
+      flex: 1;
+    }
+    .skill-name {
+      font-weight: 600;
+      color: var(--vscode-terminal-ansiGreen);
+    }
+    .skill-desc {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      margin-top: 2px;
+    }
+    
     /* 输入区域 */
     .input-container {
       padding: var(--spacing);
@@ -896,6 +922,13 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               }
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
+          } else if (evt.type === 'skill') {
+            // 显示 skill 使用提示
+            var skillDiv = document.createElement('div');
+            skillDiv.className = 'message skill';
+            skillDiv.innerHTML = '<span class="skill-icon">🎯</span><div class="skill-info"><div class="skill-name">使用 Skill: ' + evt.name + '</div>' + (evt.description ? '<div class="skill-desc">' + evt.description + '</div>' : '') + '</div>';
+            messagesEl.appendChild(skillDiv);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
           }
           // action, observation, plan, step_complete 等技术细节不显示
         }
