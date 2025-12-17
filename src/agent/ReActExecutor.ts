@@ -25,7 +25,8 @@ export class ReActExecutor {
     goal: string,
     context: LLMMessage[],
     toolRegistry: ToolRegistry,
-    llm: LLMAdapter
+    llm: LLMAdapter,
+    skillsPrompt?: string
   ): AsyncIterable<AgentEvent> {
     this.cancelled = false;
     let iteration = 0;
@@ -35,7 +36,13 @@ export class ReActExecutor {
       iteration++;
 
       // 构建提示
-      const prompt = this.buildPrompt(goal, toolRegistry, observations);
+      let prompt = this.buildPrompt(goal, toolRegistry, observations);
+      
+      // 注入 Skills
+      if (skillsPrompt) {
+        prompt += '\n' + skillsPrompt;
+      }
+      
       const messages: LLMMessage[] = [
         { role: 'system', content: prompt },
         ...context,

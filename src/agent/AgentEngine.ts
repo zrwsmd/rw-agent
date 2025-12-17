@@ -10,6 +10,7 @@ import { ContextManagerImpl } from '../context/ContextManager';
 import { ReActExecutor } from './ReActExecutor';
 import { PlanExecutor } from './PlanExecutor';
 import { Plan } from '../types/plan';
+import { SkillsManager } from '../skills';
 
 /**
  * Agent 引擎实现
@@ -20,6 +21,7 @@ export class AgentEngineImpl implements IAgentEngine {
   private llmAdapter: LLMAdapter;
   private reactExecutor: ReActExecutor;
   private planExecutor: PlanExecutor;
+  private skillsManager: SkillsManager | null = null;
 
   private state: AgentState = { status: 'idle' };
   private currentPlan: Plan | null = null;
@@ -27,13 +29,25 @@ export class AgentEngineImpl implements IAgentEngine {
   constructor(
     contextManager: ContextManagerImpl,
     toolRegistry: ToolRegistry,
-    llmAdapter: LLMAdapter
+    llmAdapter: LLMAdapter,
+    workspaceRoot?: string
   ) {
     this.contextManager = contextManager;
     this.toolRegistry = toolRegistry;
     this.llmAdapter = llmAdapter;
     this.reactExecutor = new ReActExecutor();
     this.planExecutor = new PlanExecutor();
+    
+    if (workspaceRoot) {
+      this.skillsManager = new SkillsManager(workspaceRoot);
+    }
+  }
+
+  /**
+   * 获取 Skills 管理器
+   */
+  getSkillsManager(): SkillsManager | null {
+    return this.skillsManager;
   }
 
   /**
@@ -96,11 +110,22 @@ export class AgentEngineImpl implements IAgentEngine {
     try {
       let fullResponse = '';
       
-      // 添加系统提示
+      // 添加系统提示和 Skills
+      let systemPrompt = '你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。';
+      
+      // 注入匹配的 Skills
+      if (this.skillsManager) {
+        const userMessage = context.find(m => m.role === 'user')?.content || '';
+        const skillsPrompt = this.skillsManager.generateSkillsPrompt(userMessage);
+        if (skillsPrompt) {
+          systemPrompt += skillsPrompt;
+        }
+      }
+      
       const messages = [
         {
           role: 'system' as const,
-          content: '你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。',
+          content: systemPrompt,
         },
         ...context,
       ];
@@ -145,13 +170,21 @@ export class AgentEngineImpl implements IAgentEngine {
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '' };
 
+    // 注入 Skills 到 context
+    let skillsPrompt = '';
+    if (this.skillsManager) {
+      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
+      console.log('[AgentEngine] Skills 注入:', skillsPrompt ? '有匹配' : '无匹配');
+    }
+
     let finalAnswer = '';
 
     for await (const event of this.reactExecutor.execute(
       goal,
       context,
       this.toolRegistry,
-      this.llmAdapter
+      this.llmAdapter,
+      skillsPrompt
     )) {
       // 更新状态
       if (event.type === 'thought') {
@@ -280,7 +313,8 @@ export class AgentEngineImpl implements IAgentEngine {
 export function createAgentEngine(
   contextManager: ContextManagerImpl,
   toolRegistry: ToolRegistry,
-  llmAdapter: LLMAdapter
+  llmAdapter: LLMAdapter,
+  workspaceRoot?: string
 ): AgentEngineImpl {
-  return new AgentEngineImpl(contextManager, toolRegistry, llmAdapter);
+  return new AgentEngineImpl(contextManager, toolRegistry, llmAdapter, workspaceRoot);
 }

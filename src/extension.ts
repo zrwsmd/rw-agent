@@ -4,6 +4,7 @@ import { createAgentEngine, AgentEngineImpl } from './agent';
 import { createContextManager } from './context';
 import { createDefaultTools } from './tools';
 import { createLLMAdapter } from './llm';
+import { createSkillsManager } from './skills';
 import { AgentMode } from './types/agent';
 import { LLMConfig } from './types/llm';
 import {
@@ -155,10 +156,24 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   // 获取工作区根目录
   const workspaceRoot =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+  
+  console.log('[Extension] 工作区根目录:', workspaceRoot);
+  console.log('[Extension] workspaceFolders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
 
   // 创建组件
   const contextManager = createContextManager();
-  const toolRegistry = createDefaultTools(workspaceRoot);
+  const skillsManager = createSkillsManager(workspaceRoot);
+  const toolRegistry = createDefaultTools(workspaceRoot, skillsManager);
+  
+  // 打印加载的 skills
+  const loadedSkills = skillsManager.getAllSkills();
+  console.log('[Extension] 已加载 Skills 数量:', loadedSkills.length);
+  for (const skill of loadedSkills) {
+    console.log('[Extension] - Skill:', skill.name);
+    console.log('[Extension]   路径:', skill.skillPath);
+    console.log('[Extension]   关键词:', skill.keywords);
+    console.log('[Extension]   脚本:', Array.from(skill.scripts.keys()));
+  }
 
   const llmConfig: LLMConfig = {
     provider,
@@ -169,8 +184,13 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
 
   try {
     const llmAdapter = createLLMAdapter(llmConfig);
-    agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter);
+    agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter, workspaceRoot);
     console.log('Agent 引擎初始化成功');
+    const skills = skillsManager.getAllSkills();
+    console.log('Skills 已加载:', skills.length, '个');
+    for (const skill of skills) {
+      console.log('  - Skill:', skill.name, '关键词:', skill.keywords.join(', '));
+    }
   } catch (error) {
     vscode.window.showErrorMessage(
       `初始化 Agent 失败: ${error instanceof Error ? error.message : '未知错误'}`
