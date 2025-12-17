@@ -158,13 +158,71 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       border: 1px solid var(--vscode-input-border);
       align-self: flex-start;
       border-bottom-left-radius: 4px;
+      position: relative;
+    }
+    .message.assistant .copy-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: transparent;
+      border: none;
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      opacity: 0;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      transition: opacity 0.2s, background 0.2s;
+    }
+    .message.assistant:hover .copy-btn {
+      opacity: 0.6;
+    }
+    .message.assistant .copy-btn:hover {
+      opacity: 1;
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .message.assistant .copy-btn.copied {
+      opacity: 1;
+      color: var(--vscode-terminal-ansiGreen);
     }
     .message.thought {
       background: rgba(100, 100, 255, 0.1);
       border-left: 3px solid var(--vscode-textLink-foreground);
-      font-style: italic;
       font-size: 12px;
       opacity: 0.9;
+      padding: 0;
+    }
+    .thought-header {
+      padding: 8px 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+    .thought-header:hover {
+      background: rgba(100, 100, 255, 0.15);
+    }
+    .thought-arrow {
+      transition: transform 0.2s;
+      font-size: 10px;
+    }
+    .thought-arrow.expanded {
+      transform: rotate(90deg);
+    }
+    .thought-title {
+      font-style: italic;
+      color: var(--vscode-textLink-foreground);
+    }
+    .thought-content {
+      display: none;
+      padding: 8px 14px;
+      border-top: 1px solid rgba(100, 100, 255, 0.2);
+      font-style: italic;
+      line-height: 1.5;
+    }
+    .thought-content.show {
+      display: block;
     }
     .message.action {
       background: rgba(255, 200, 100, 0.1);
@@ -364,13 +422,70 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         return text.trim();
       }
 
-      function addMessage(type, content) {
+      function addMessage(type, content, rawContent) {
         var empty = document.getElementById('emptyState');
         if (empty) empty.remove();
         
         var div = document.createElement('div');
         div.className = 'message ' + type;
         div.innerHTML = formatText(content || '').split('\\n').join('<br>');
+        
+        // 为 assistant 消息添加复制按钮
+        if (type === 'assistant') {
+          var copyBtn = document.createElement('button');
+          copyBtn.className = 'copy-btn';
+          copyBtn.innerHTML = '📋';
+          copyBtn.title = '复制';
+          copyBtn.setAttribute('data-content', rawContent || content || '');
+          copyBtn.onclick = function(e) {
+            e.stopPropagation();
+            var textToCopy = copyBtn.getAttribute('data-content');
+            navigator.clipboard.writeText(textToCopy).then(function() {
+              copyBtn.innerHTML = '✓';
+              copyBtn.classList.add('copied');
+              setTimeout(function() {
+                copyBtn.innerHTML = '📋';
+                copyBtn.classList.remove('copied');
+              }, 1500);
+            });
+          };
+          div.appendChild(copyBtn);
+        }
+        
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return div;
+      }
+
+      function addThought(content) {
+        var empty = document.getElementById('emptyState');
+        if (empty) empty.remove();
+        
+        var div = document.createElement('div');
+        div.className = 'message thought';
+        
+        var header = document.createElement('div');
+        header.className = 'thought-header';
+        header.innerHTML = '<span class="thought-arrow">▶</span><span class="thought-title">💭 思考中...</span>';
+        
+        var contentDiv = document.createElement('div');
+        contentDiv.className = 'thought-content';
+        contentDiv.innerHTML = formatText(content || '').split('\\n').join('<br>');
+        
+        header.onclick = function() {
+          var arrow = header.querySelector('.thought-arrow');
+          var isExpanded = contentDiv.classList.contains('show');
+          if (isExpanded) {
+            contentDiv.classList.remove('show');
+            arrow.classList.remove('expanded');
+          } else {
+            contentDiv.classList.add('show');
+            arrow.classList.add('expanded');
+          }
+        };
+        
+        div.appendChild(header);
+        div.appendChild(contentDiv);
         messagesEl.appendChild(div);
         messagesEl.scrollTop = messagesEl.scrollHeight;
         return div;
@@ -409,10 +524,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           
           // 只显示思考过程和最终答案，隐藏工具调用细节
           if (evt.type === 'thought') {
-            addMessage('thought', '💭 ' + evt.content);
+            addThought(evt.content);
           } else if (evt.type === 'answer') {
             if (!currentAssistantMessage) {
-              addMessage('assistant', evt.content);
+              addMessage('assistant', evt.content, evt.content);
+            } else {
+              // 更新复制按钮的内容
+              var copyBtn = currentAssistantMessage.querySelector('.copy-btn');
+              if (copyBtn) {
+                copyBtn.setAttribute('data-content', currentAssistantMessage.innerText);
+              }
             }
             currentAssistantMessage = null;
             isProcessing = false;
@@ -423,13 +544,20 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             sendBtn.disabled = false;
           } else if (evt.type === 'token') {
             if (!currentAssistantMessage) {
-              currentAssistantMessage = addMessage('assistant', '');
+              currentAssistantMessage = addMessage('assistant', '', '');
             }
             var tokenContent = evt.content;
             if (tokenContent) {
-              // 处理换行符
+              // 处理换行符，保留复制按钮
+              var copyBtn = currentAssistantMessage.querySelector('.copy-btn');
               tokenContent = tokenContent.split('\\n').join('<br>');
+              if (copyBtn) {
+                copyBtn.remove();
+              }
               currentAssistantMessage.innerHTML = currentAssistantMessage.innerHTML + tokenContent;
+              if (copyBtn) {
+                currentAssistantMessage.appendChild(copyBtn);
+              }
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
           }
