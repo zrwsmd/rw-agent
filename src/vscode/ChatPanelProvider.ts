@@ -356,13 +356,21 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         currentAssistantMessage = null;
       }
 
+      function formatText(text) {
+        if (!text) return '';
+        // 移除 Markdown 符号 - 使用 split/join 一次性替换
+        text = text.split('**').join('');
+        text = text.split('*').join('');
+        return text.trim();
+      }
+
       function addMessage(type, content) {
         var empty = document.getElementById('emptyState');
         if (empty) empty.remove();
         
         var div = document.createElement('div');
         div.className = 'message ' + type;
-        div.textContent = content || '';
+        div.innerHTML = formatText(content || '').split('\\n').join('<br>');
         messagesEl.appendChild(div);
         messagesEl.scrollTop = messagesEl.scrollHeight;
         return div;
@@ -399,17 +407,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         if (message.type === 'agent_event') {
           var evt = message.event;
           
+          // 只显示思考过程和最终答案，隐藏工具调用细节
           if (evt.type === 'thought') {
             addMessage('thought', '💭 ' + evt.content);
-          } else if (evt.type === 'action') {
-            addMessage('action', '🔧 ' + evt.tool);
-          } else if (evt.type === 'observation') {
-            var obsContent = evt.result.success ? evt.result.output : '❌ ' + evt.result.error;
-            addMessage('observation', '📋 ' + obsContent);
-          } else if (evt.type === 'plan') {
-            addMessage('plan', '📋 计划');
-          } else if (evt.type === 'step_complete') {
-            addMessage('assistant', '✅ 步骤 ' + evt.step + ' 完成');
           } else if (evt.type === 'answer') {
             if (!currentAssistantMessage) {
               addMessage('assistant', evt.content);
@@ -425,9 +425,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             if (!currentAssistantMessage) {
               currentAssistantMessage = addMessage('assistant', '');
             }
-            currentAssistantMessage.textContent += evt.content;
-            messagesEl.scrollTop = messagesEl.scrollHeight;
+            var tokenContent = evt.content;
+            if (tokenContent) {
+              // 处理换行符
+              tokenContent = tokenContent.split('\\n').join('<br>');
+              currentAssistantMessage.innerHTML = currentAssistantMessage.innerHTML + tokenContent;
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            }
           }
+          // action, observation, plan, step_complete 等技术细节不显示
         }
       });
 
