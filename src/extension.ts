@@ -68,6 +68,10 @@ export function activate(context: vscode.ExtensionContext) {
       case 'open_settings':
         vscode.commands.executeCommand('vscode-agent.setApiKey');
         break;
+
+      case 'save_settings':
+        await handleSaveSettings(message.provider, message.apiKey, message.model, context);
+        break;
     }
   });
 
@@ -284,6 +288,35 @@ async function restoreConversation(
     }
   } catch (error) {
     console.error('恢复对话失败:', error);
+  }
+}
+
+/**
+ * 处理保存设置
+ */
+async function handleSaveSettings(
+  provider: string,
+  apiKey: string,
+  model: string,
+  context: vscode.ExtensionContext
+): Promise<void> {
+  try {
+    // 保存 API 密钥
+    await context.secrets.store(`${provider}-api-key`, apiKey);
+    
+    // 更新配置
+    const config = vscode.workspace.getConfiguration('vscode-agent');
+    await config.update('llm.provider', provider, vscode.ConfigurationTarget.Global);
+    if (model) {
+      await config.update('llm.model', model, vscode.ConfigurationTarget.Global);
+    }
+    
+    vscode.window.showInformationMessage(`✅ ${provider} 设置已保存`);
+    
+    // 重新初始化 agent
+    await initializeAgent(context);
+  } catch (error) {
+    vscode.window.showErrorMessage(`保存设置失败: ${error instanceof Error ? error.message : '未知错误'}`);
   }
 }
 

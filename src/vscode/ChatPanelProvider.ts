@@ -11,6 +11,7 @@ export type UIMessage =
   | { type: 'cancel' }
   | { type: 'set_mode'; mode: AgentMode }
   | { type: 'open_settings' }
+  | { type: 'save_settings'; provider: string; apiKey: string; model: string }
   | { type: 'ready' };
 
 /**
@@ -359,6 +360,168 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
     .empty-state-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
     .empty-state-text { font-size: 14px; }
+    
+    /* 设置面板 */
+    .settings-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    .settings-overlay.show {
+      display: flex;
+    }
+    .settings-panel {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px;
+      width: 90%;
+      max-width: 400px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .settings-title {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .settings-close {
+      background: transparent;
+      border: none;
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      font-size: 18px;
+      opacity: 0.7;
+    }
+    .settings-close:hover {
+      opacity: 1;
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .settings-body {
+      padding: 20px;
+    }
+    .settings-section {
+      margin-bottom: 24px;
+    }
+    .settings-section:last-child {
+      margin-bottom: 0;
+    }
+    .settings-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }
+    .settings-field {
+      margin-bottom: 16px;
+    }
+    .settings-field:last-child {
+      margin-bottom: 0;
+    }
+    .settings-label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--vscode-foreground);
+    }
+    .settings-select {
+      width: 100%;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border);
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .settings-select:focus {
+      outline: none;
+      border-color: var(--vscode-focusBorder);
+    }
+    .settings-input {
+      width: 100%;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border);
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .settings-input:focus {
+      outline: none;
+      border-color: var(--vscode-focusBorder);
+    }
+    .settings-input::placeholder {
+      color: var(--vscode-input-placeholderForeground);
+    }
+    .settings-hint {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      margin-top: 6px;
+    }
+    .settings-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--vscode-panel-border);
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .settings-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s;
+    }
+    .settings-btn-primary {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
+    .settings-btn-primary:hover {
+      background: var(--vscode-button-hoverBackground);
+    }
+    .settings-btn-secondary {
+      background: transparent;
+      color: var(--vscode-foreground);
+      border: 1px solid var(--vscode-input-border);
+    }
+    .settings-btn-secondary:hover {
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .api-key-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .api-key-status.set {
+      color: var(--vscode-terminal-ansiGreen);
+    }
+    .api-key-status.not-set {
+      color: var(--vscode-errorForeground);
+    }
   </style>
 </head>
 <body>
@@ -383,6 +546,68 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     <div class="input-wrapper">
       <textarea id="input" placeholder="输入消息，按 Enter 发送..." rows="1"></textarea>
       <button class="send-btn" id="sendBtn">发送</button>
+    </div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <div class="settings-title">⚙️ 设置</div>
+        <button class="settings-close" id="settingsClose">×</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-section">
+          <div class="settings-section-title">API 配置</div>
+          <div class="settings-field">
+            <label class="settings-label">LLM 提供商</label>
+            <select class="settings-select" id="providerSelect">
+              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic Claude</option>
+            </select>
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">API 密钥</label>
+            <input type="password" class="settings-input" id="apiKeyInput" placeholder="输入 API 密钥...">
+            <div class="api-key-status not-set" id="apiKeyStatus">
+              <span>⚠️</span> 未设置
+            </div>
+            <div class="settings-hint">密钥将安全存储在 VSCode 密钥库中</div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">模型设置</div>
+          <div class="settings-field">
+            <label class="settings-label">模型名称</label>
+            <select class="settings-select" id="modelSelect">
+              <optgroup label="Gemini 模型" id="geminiModels">
+                <option value="gemini-2.5-flash">gemini-2.5-flash (推荐)</option>
+                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+              </optgroup>
+              <optgroup label="OpenAI 模型" id="openaiModels" style="display:none">
+                <option value="gpt-4o">gpt-4o (推荐)</option>
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                <option value="gpt-4-turbo">gpt-4-turbo</option>
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+              </optgroup>
+              <optgroup label="Anthropic 模型" id="anthropicModels" style="display:none">
+                <option value="claude-sonnet-4-20250514">claude-sonnet-4 (推荐)</option>
+                <option value="claude-3-5-sonnet-20241022">claude-3.5-sonnet</option>
+                <option value="claude-3-opus-20240229">claude-3-opus</option>
+                <option value="claude-3-haiku-20240307">claude-3-haiku</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="settings-btn settings-btn-secondary" id="settingsCancel">取消</button>
+        <button class="settings-btn settings-btn-primary" id="settingsSave">保存设置</button>
+      </div>
     </div>
   </div>
 
@@ -494,8 +719,84 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       // 绑定按钮事件
       sendBtn.onclick = function() { sendMessage(); };
       
+      // 设置面板元素
+      var settingsOverlay = document.getElementById('settingsOverlay');
+      var settingsClose = document.getElementById('settingsClose');
+      var settingsCancel = document.getElementById('settingsCancel');
+      var settingsSave = document.getElementById('settingsSave');
+      var providerSelect = document.getElementById('providerSelect');
+      var apiKeyInput = document.getElementById('apiKeyInput');
+      var modelSelect = document.getElementById('modelSelect');
+      
+      // 模型选项配置
+      var modelOptions = {
+        gemini: [
+          { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
+          { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
+          { value: 'gemini-2.5-pro-preview', label: 'gemini-2.5-pro-preview' },
+          { value: 'gemini-2.5-flash-preview-image', label: 'gemini-2.5-flash-preview-image' }
+        ],
+        openai: [],
+        anthropic: []
+      };
+      
+      function updateModelOptions(provider) {
+        modelSelect.innerHTML = '';
+        var options = modelOptions[provider] || modelOptions.gemini;
+        for (var i = 0; i < options.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = options[i].value;
+          opt.textContent = options[i].label;
+          modelSelect.appendChild(opt);
+        }
+      }
+      
+      providerSelect.onchange = function() {
+        updateModelOptions(providerSelect.value);
+      };
+      
       settingsBtn.onclick = function() {
-        vscode.postMessage({ type: 'open_settings' });
+        updateModelOptions(providerSelect.value);
+        settingsOverlay.classList.add('show');
+      };
+      
+      settingsClose.onclick = function() {
+        settingsOverlay.classList.remove('show');
+      };
+      
+      settingsCancel.onclick = function() {
+        settingsOverlay.classList.remove('show');
+      };
+      
+      settingsOverlay.onclick = function(e) {
+        if (e.target === settingsOverlay) {
+          settingsOverlay.classList.remove('show');
+        }
+      };
+      
+      settingsSave.onclick = function() {
+        var provider = providerSelect.value;
+        var apiKey = apiKeyInput.value.trim();
+        var model = modelSelect.value;
+        
+        if (apiKey) {
+          vscode.postMessage({ 
+            type: 'save_settings', 
+            provider: provider,
+            apiKey: apiKey,
+            model: model
+          });
+          apiKeyInput.value = '';
+          settingsOverlay.classList.remove('show');
+        } else {
+          // 提示用户输入密钥
+          apiKeyInput.style.borderColor = 'var(--vscode-errorForeground)';
+          apiKeyInput.placeholder = '请输入 API 密钥！';
+          setTimeout(function() {
+            apiKeyInput.style.borderColor = '';
+            apiKeyInput.placeholder = '输入 API 密钥...';
+          }, 2000);
+        }
       };
       
       clearBtn.onclick = function() {
