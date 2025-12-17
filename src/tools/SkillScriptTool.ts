@@ -39,7 +39,10 @@ export class SkillScriptTool implements Tool {
     script_name: string;
     args?: string[];
   }): Promise<ToolResult> {
+    console.log('[SkillScriptTool] 执行脚本, 参数:', params);
+    
     if (!this.skillsManager) {
+      console.log('[SkillScriptTool] SkillsManager 未初始化');
       return {
         success: false,
         output: 'SkillsManager 未初始化',
@@ -48,7 +51,9 @@ export class SkillScriptTool implements Tool {
 
     const { skill_name, script_name, args = [] } = params;
 
+    console.log('[SkillScriptTool] 调用 executeScript:', skill_name, script_name, args);
     const result = await this.skillsManager.executeScript(skill_name, script_name, args);
+    console.log('[SkillScriptTool] 执行结果:', result);
 
     if (result.success) {
       return {
@@ -59,6 +64,7 @@ export class SkillScriptTool implements Tool {
       return {
         success: false,
         output: result.stderr || '脚本执行失败',
+        error: result.stderr,
       };
     }
   }

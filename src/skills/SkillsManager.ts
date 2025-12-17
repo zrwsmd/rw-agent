@@ -152,6 +152,18 @@ export class SkillsManager {
           description = descMatch[1].trim();
           console.log('[SkillsManager] 提取 description:', description);
         }
+        
+        // 提取 keywords（可选字段，支持数组格式）
+        const keywordsMatch = frontmatter.match(/keywords:\s*\[([^\]]*)\]/);
+        if (keywordsMatch) {
+          const keywordsStr = keywordsMatch[1];
+          const extractedKeywords = keywordsStr
+            .split(',')
+            .map((k) => k.trim().replace(/['"]/g, ''))
+            .filter((k) => k.length > 0);
+          keywords.push(...extractedKeywords);
+          console.log('[SkillsManager] 提取 keywords:', extractedKeywords);
+        }
       }
     }
 

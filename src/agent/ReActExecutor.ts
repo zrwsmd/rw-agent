@@ -105,10 +105,13 @@ export class ReActExecutor {
       // 发出观察事件
       yield { type: 'observation', result };
 
-      // 记录观察结果
+      // 记录观察结果 - 优先使用 output，其次使用 error
       const obsText = result.success
         ? result.output
-        : `错误: ${result.error}`;
+        : `错误: ${result.output || result.error || '未知错误'}`;
+      
+      console.log('[ReActExecutor] 工具执行结果:', { success: result.success, output: result.output, error: result.error });
+      
       observations.push(
         `Action: ${step.action.tool}(${JSON.stringify(step.action.parameters)})\nObservation: ${obsText}`
       );
