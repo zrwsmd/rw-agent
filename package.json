@@ -1,0 +1,109 @@
+{
+  "name": "vscode-agent",
+  "displayName": "VSCode Agent",
+  "description": "类似 Claude Code 的 AI Agent 扩展，支持 ReAct 和 Plan 模式",
+  "version": "0.1.0",
+  "publisher": "vscode-agent",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:vscode-agent.chatPanel"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vscode-agent",
+          "title": "Agent",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vscode-agent": [
+        {
+          "type": "webview",
+          "id": "vscode-agent.chatPanel",
+          "name": "Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "VSCode Agent",
+      "properties": {
+        "vscode-agent.llm.provider": {
+          "type": "string",
+          "default": "gemini",
+          "enum": ["openai", "anthropic", "gemini"],
+          "description": "LLM 提供商"
+        },
+        "vscode-agent.llm.model": {
+          "type": "string",
+          "default": "gemini-2.5-flash",
+          "description": "模型名称"
+        },
+        "vscode-agent.llm.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "自定义 API 基础 URL（可选）"
+        },
+        "vscode-agent.agent.maxIterations": {
+          "type": "number",
+          "default": 20,
+          "description": "ReAct 模式最大迭代次数"
+        },
+        "vscode-agent.agent.defaultMode": {
+          "type": "string",
+          "default": "react",
+          "enum": ["react", "plan"],
+          "description": "默认 Agent 模式"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "vscode-agent.newChat",
+        "title": "新建对话",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.clearChat",
+        "title": "清空对话",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.setApiKey",
+        "title": "设置 API 密钥",
+        "category": "Agent"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "fast-check": "^3.14.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "dependencies": {
+    "openai": "^4.20.0",
+    "@anthropic-ai/sdk": "^0.10.0"
+  }
+}
