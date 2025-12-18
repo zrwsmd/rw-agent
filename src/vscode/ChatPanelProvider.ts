@@ -900,6 +900,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               <optgroup label="Gemini 模型" id="geminiModels">
                 <option value="gemini-2.5-flash">gemini-2.5-flash (推荐)</option>
                 <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
                 <option value="gemini-2.0-flash">gemini-2.0-flash</option>
                 <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                 <option value="gemini-1.5-pro">gemini-1.5-pro</option>
@@ -1083,8 +1085,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         gemini: [
           { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
           { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
-          { value: 'gemini-2.5-pro-preview', label: 'gemini-2.5-pro-preview' },
-          { value: 'gemini-2.5-flash-preview-image', label: 'gemini-2.5-flash-preview-image' }
+          { value: 'gemini-3-flash-preview', label: 'gemini-3-flash-preview' },
+          { value: 'gemini-3-pro-preview', label: 'gemini-3-pro-preview' },
+          { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
+          { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
+          { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro' }
         ],
         openai: [],
         anthropic: []
