@@ -802,7 +802,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     </select>
     <div class="toolbar-spacer"></div>
     <button class="toolbar-btn" id="newChatBtn" title="New Chat">➕</button>
-    <button class="toolbar-btn" id="historyBtn" title="History">� 历史</button>
+    <button class="toolbar-btn" id="historyBtn" title="History">�</button>
     <button class="toolbar-btn" id="settingsBtn" title="Settings">⚙️</button>
   </div>
 
