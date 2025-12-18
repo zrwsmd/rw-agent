@@ -726,6 +726,72 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     .api-key-status.not-set {
       color: var(--vscode-errorForeground);
     }
+    
+    /* 确认对话框 */
+    .confirm-dialog-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 200;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .confirm-dialog {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px;
+      min-width: 300px;
+      max-width: 400px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    .confirm-dialog-content {
+      padding: 20px;
+    }
+    .confirm-dialog h3 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    .confirm-dialog p {
+      margin: 0 0 20px 0;
+      font-size: 14px;
+      color: var(--vscode-descriptionForeground);
+      line-height: 1.4;
+    }
+    .confirm-dialog-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .confirm-btn-cancel,
+    .confirm-btn-delete {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .confirm-btn-cancel {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+    }
+    .confirm-btn-cancel:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
+    }
+    .confirm-btn-delete {
+      background: var(--vscode-errorForeground);
+      color: var(--vscode-button-foreground);
+    }
+    .confirm-btn-delete:hover {
+      background: var(--vscode-errorForeground);
+      opacity: 0.9;
+    }
   </style>
 </head>
 <body>
@@ -1114,9 +1180,43 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             if (e.target.classList.contains('history-item-delete')) {
               e.stopPropagation();
               var id = e.target.getAttribute('data-id');
-              if (confirm('确定删除这个对话吗？')) {
+              console.log('[ChatPanel] 点击删除按钮，对话ID:', id);
+              
+              // 创建自定义确认对话框
+              var confirmDialog = document.createElement('div');
+              confirmDialog.className = 'confirm-dialog-overlay';
+              confirmDialog.innerHTML = 
+                '<div class="confirm-dialog">' +
+                  '<div class="confirm-dialog-content">' +
+                    '<h3>确认删除</h3>' +
+                    '<p>确定要删除这个对话吗？此操作无法撤销。</p>' +
+                    '<div class="confirm-dialog-buttons">' +
+                      '<button class="confirm-btn-cancel">取消</button>' +
+                      '<button class="confirm-btn-delete">删除</button>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>';
+              
+              document.body.appendChild(confirmDialog);
+              
+              // 绑定按钮事件
+              confirmDialog.querySelector('.confirm-btn-cancel').onclick = function() {
+                console.log('[ChatPanel] 用户取消删除');
+                document.body.removeChild(confirmDialog);
+              };
+              
+              confirmDialog.querySelector('.confirm-btn-delete').onclick = function() {
+                console.log('[ChatPanel] 用户确认删除，发送删除消息');
                 vscode.postMessage({ type: 'delete_conversation', id: id });
-              }
+                document.body.removeChild(confirmDialog);
+              };
+              
+              // 点击背景关闭
+              confirmDialog.onclick = function(e) {
+                if (e.target === confirmDialog) {
+                  document.body.removeChild(confirmDialog);
+                }
+              };
             } else {
               var id = item.getAttribute('data-id');
               vscode.postMessage({ type: 'load_conversation', id: id });

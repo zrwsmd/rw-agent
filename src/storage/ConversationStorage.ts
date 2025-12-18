@@ -104,8 +104,12 @@ export class ConversationStorage {
   async deleteConversation(id: string): Promise<void> {
     try {
       const filePath = path.join(this.conversationsDir, `${id}.json`);
+      console.log(`[ConversationStorage] 尝试删除对话文件: ${filePath}`);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
+        console.log(`[ConversationStorage] 对话文件删除成功: ${id}`);
+      } else {
+        console.log(`[ConversationStorage] 对话文件不存在: ${filePath}`);
       }
     } catch (error) {
       console.error(`[ConversationStorage] 删除对话失败: ${id}`, error);

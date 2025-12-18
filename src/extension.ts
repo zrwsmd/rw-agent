@@ -106,14 +106,23 @@ export function activate(context: vscode.ExtensionContext) {
         break;
 
       case 'delete_conversation':
+        console.log('[Extension] 收到删除对话请求:', message.id);
         if (conversationStorage) {
-          await conversationStorage.deleteConversation(message.id);
-          // 刷新列表
-          const conversations = await conversationStorage.listConversations();
-          chatPanelProvider?.postMessage({
-            type: 'conversation_list',
-            conversations: conversations,
-          });
+          try {
+            await conversationStorage.deleteConversation(message.id);
+            console.log('[Extension] 对话删除成功:', message.id);
+            // 刷新列表
+            const conversations = await conversationStorage.listConversations();
+            chatPanelProvider?.postMessage({
+              type: 'conversation_list',
+              conversations: conversations,
+            });
+            console.log('[Extension] 对话列表已刷新');
+          } catch (error) {
+            console.error('[Extension] 删除对话失败:', error);
+          }
+        } else {
+          console.error('[Extension] conversationStorage 未初始化');
         }
         break;
 
