@@ -1138,6 +1138,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
       // 历史对话按钮
       var historyBtn = document.getElementById('historyBtn');
+      historyBtn.textContent = '📜'; // Fix history button icon
       var historyOverlay = document.getElementById('historyOverlay');
       var historyClose = document.getElementById('historyClose');
       var historyList = document.getElementById('historyList');
