@@ -16,6 +16,113 @@ let chatPanelProvider: ChatPanelProvider | null = null;
 let conversationStorage: ConversationStorage | null = null;
 let currentConversation: Conversation | null = null;
 
+// 确认请求管理
+interface ConfirmRequest {
+  resolve: (value: string) => void;
+  reject: (reason?: any) => void;
+  timeout: NodeJS.Timeout;
+}
+const pendingConfirms = new Map<string, ConfirmRequest>();
+
+/**
+ * 处理用户的确认响应
+ */
+function handleConfirmResponse(requestId: string, selectedOption: string): void {
+  const request = pendingConfirms.get(requestId);
+  if (!request) {
+    console.warn('[Extension] 未找到确认请求:', requestId);
+    return;
+  }
+
+  pendingConfirms.delete(requestId);
+  clearTimeout(request.timeout);
+  request.resolve(selectedOption);
+}
+
+/**
+ * 请求用户确认
+ */
+function requestConfirmation(
+  requestId: string,
+  title: string,
+  description: string,
+  details: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingConfirms.delete(requestId);
+      reject(new Error('确认请求超时'));
+    }, 60000); // 60秒超时
+
+    pendingConfirms.set(requestId, { resolve, reject, timeout });
+
+    // 发送确认请求到 webview
+    chatPanelProvider?.postMessage({
+      type: 'confirm_action',
+      requestId,
+      title,
+      description,
+      details,
+      options: [
+        { id: 'confirm', label: '1 Yes', primary: true },
+        { id: 'confirm_no_ask', label: '2 Yes, and don\'t ask again' },
+        { id: 'cancel', label: '3 No' },
+      ],
+    });
+  });
+}
+
+/**
+ * 为写入和执行工具添加确认机制
+ */
+function wrapToolsWithConfirmation(toolRegistry: any): void {
+  const toolsNeedingConfirmation = ['shell_command', 'write_file', 'skill_script'];
+  
+  for (const toolName of toolsNeedingConfirmation) {
+    const originalTool = toolRegistry.get(toolName);
+    if (!originalTool) continue;
+
+    const originalExecute = originalTool.execute.bind(originalTool);
+    
+    originalTool.execute = async function(params: Record<string, unknown>) {
+      // 构建确认请求
+      let title = '';
+      let description = '';
+      let details = '';
+      
+      if (toolName === 'shell_command') {
+        title = '执行命令';
+        description = `Allow execute command?`;
+        details = `命令: ${params.command}\n工作目录: ${params.cwd || '(默认)'}`;
+      } else if (toolName === 'write_file') {
+        title = '写入文件';
+        description = `Allow write to ${params.path}?`;
+        const content = params.content as string;
+        details = `文件路径: ${params.path}\n\n内容预览:\n${content.substring(0, 500)}${content.length > 500 ? '\n...' : ''}`;
+      } else if (toolName === 'skill_script') {
+        title = '执行脚本';
+        description = `Allow execute script ${params.skill_name}/${params.script_name}?`;
+        const args = params.args as string[] | undefined;
+        details = `Skill: ${params.skill_name}\n脚本: ${params.script_name}\n参数: ${args?.join(' ') || '(无)'}`;
+      }
+
+      // 请求用户确认
+      const requestId = `confirm_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      const choice = await requestConfirmation(requestId, title, description, details);
+
+      if (choice !== 'confirm' && choice !== 'confirm_no_ask') {
+        return {
+          success: false,
+          output: '用户取消了操作',
+        };
+      }
+
+      // 执行原始工具
+      return originalExecute(params);
+    };
+  }
+}
+
 export function activate(context: vscode.ExtensionContext) {
   console.log('VSCode Agent 扩展已激活');
 
@@ -132,6 +239,10 @@ export function activate(context: vscode.ExtensionContext) {
         }
         break;
 
+      case 'confirm_response':
+        handleConfirmResponse(message.requestId, message.selectedOption);
+        break;
+
       case 'open_settings':
         vscode.commands.executeCommand('vscode-agent.setApiKey');
         break;
@@ -191,56 +302,6 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 /**
- * 为写入和执行工具添加确认机制
- */
-function wrapToolsWithConfirmation(toolRegistry: any): void {
-  const toolsNeedingConfirmation = ['shell_command', 'write_file', 'skill_script'];
-  
-  for (const toolName of toolsNeedingConfirmation) {
-    const originalTool = toolRegistry.get(toolName);
-    if (!originalTool) continue;
-
-    const originalExecute = originalTool.execute.bind(originalTool);
-    
-    originalTool.execute = async function(params: Record<string, unknown>) {
-      // 构建确认消息
-      let confirmMessage = '';
-      
-      if (toolName === 'shell_command') {
-        confirmMessage = `执行命令:\n\n${params.command}\n\n工作目录: ${params.cwd || '(默认)'}`;
-      } else if (toolName === 'write_file') {
-        const content = (params.content as string).substring(0, 200);
-        const contentPreview = content.length < (params.content as string).length 
-          ? content + '...' 
-          : content;
-        confirmMessage = `写入文件: ${params.path}\n\n内容预览:\n${contentPreview}`;
-      } else if (toolName === 'skill_script') {
-        const args = params.args as string[] | undefined;
-        confirmMessage = `执行脚本: ${params.skill_name}/${params.script_name}\n\n参数: ${args?.join(' ') || '(无)'}`;
-      }
-
-      // 弹出确认框
-      const choice = await vscode.window.showWarningMessage(
-        confirmMessage,
-        { modal: true },
-        '执行',
-        '取消'
-      );
-
-      if (choice !== '执行') {
-        return {
-          success: false,
-          output: '用户取消了操作',
-        };
-      }
-
-      // 执行原始工具
-      return originalExecute(params);
-    };
-  }
-}
-
-/**
  * 初始化 Agent
  */
 async function initializeAgent(context: vscode.ExtensionContext): Promise<void> {
@@ -280,6 +341,9 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   const contextManager = createContextManager();
   const skillsManager = createSkillsManager(workspaceRoot);
   const toolRegistry = createDefaultTools(workspaceRoot, skillsManager);
+  
+  // 为写入和执行工具添加确认机制
+  wrapToolsWithConfirmation(toolRegistry);
   
   // 为写入和执行工具添加确认机制
   wrapToolsWithConfirmation(toolRegistry);

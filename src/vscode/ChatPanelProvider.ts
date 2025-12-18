@@ -28,7 +28,9 @@ export type UIMessage =
   | { type: 'delete_conversation'; id: string }
   | { type: 'list_conversations' }
   | { type: 'conversation_list'; conversations: ConversationItem[] }
-  | { type: 'conversation_loaded'; messages: Array<{ role: string; content: string }> };
+  | { type: 'conversation_loaded'; messages: Array<{ role: string; content: string }> }
+  | { type: 'confirm_action'; requestId: string; title: string; description: string; details: string; options: Array<{ id: string; label: string; primary?: boolean }> }
+  | { type: 'confirm_response'; requestId: string; selectedOption: string };
 
 /**
  * 聊天面板提供者
@@ -813,6 +815,143 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       background: var(--vscode-errorForeground);
       opacity: 0.9;
     }
+    
+    /* 确认对话框样式 */
+    .confirm-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 300;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(2px);
+    }
+    .confirm-dialog-container {
+      width: 90%;
+      max-width: 600px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .confirm-dialog {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      max-height: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+    }
+    .confirm-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      flex-shrink: 0;
+    }
+    .confirm-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    .confirm-close {
+      background: transparent;
+      border: none;
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      font-size: 20px;
+      opacity: 0.7;
+      transition: all 0.2s;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .confirm-close:hover {
+      opacity: 1;
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .confirm-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .confirm-description {
+      font-size: 16px;
+      color: var(--vscode-foreground);
+      line-height: 1.5;
+      font-weight: 500;
+    }
+    .confirm-details-container {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .confirm-details {
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 0;
+      font-size: 13px;
+      color: var(--vscode-foreground);
+      font-family: var(--vscode-editor-font-family);
+      overflow-y: auto;
+      flex: 1;
+      line-height: 1.5;
+      min-height: 100px;
+    }
+    .confirm-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 20px 24px;
+      border-top: 1px solid var(--vscode-panel-border);
+      flex-shrink: 0;
+    }
+    .confirm-option-btn {
+      padding: 14px 20px;
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: left;
+      background: var(--vscode-input-background);
+      color: var(--vscode-foreground);
+      position: relative;
+    }
+    .confirm-option-btn:hover {
+      background: var(--vscode-list-hoverBackground);
+      border-color: var(--vscode-focusBorder);
+    }
+    .confirm-option-btn.primary {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border-color: var(--vscode-button-background);
+    }
+    .confirm-option-btn.primary:hover {
+      background: var(--vscode-button-hoverBackground);
+      border-color: var(--vscode-button-hoverBackground);
+    }
+    .confirm-option-btn:focus {
+      outline: 2px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body>
@@ -861,6 +1000,25 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       </div>
       <div class="history-list" id="historyList">
         <div class="history-empty">暂无历史对话</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 确认对话框 -->
+  <div class="confirm-overlay" id="confirmOverlay" style="display: none;">
+    <div class="confirm-dialog-container">
+      <div class="confirm-dialog">
+        <div class="confirm-header">
+          <div class="confirm-title" id="confirmTitle">确认操作</div>
+          <button class="confirm-close" id="confirmClose">×</button>
+        </div>
+        <div class="confirm-body">
+          <div class="confirm-description" id="confirmDescription"></div>
+          <div class="confirm-details-container">
+            <pre class="confirm-details" id="confirmDetails"></pre>
+          </div>
+        </div>
+        <div class="confirm-footer" id="confirmFooter"></div>
       </div>
     </div>
   </div>
@@ -1352,6 +1510,92 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           message.messages.forEach(function(msg) {
             addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content, msg.content);
           });
+        }
+      });
+
+      // 确认对话框处理
+      var confirmOverlay = document.getElementById('confirmOverlay');
+      var confirmClose = document.getElementById('confirmClose');
+      var currentConfirmRequestId = null;
+
+      confirmClose.onclick = function() {
+        confirmOverlay.style.display = 'none';
+        if (currentConfirmRequestId) {
+          vscode.postMessage({
+            type: 'confirm_response',
+            requestId: currentConfirmRequestId,
+            selectedOption: 'cancel'
+          });
+          currentConfirmRequestId = null;
+        }
+      };
+
+      confirmOverlay.onclick = function(e) {
+        if (e.target === confirmOverlay) {
+          confirmOverlay.style.display = 'none';
+          if (currentConfirmRequestId) {
+            vscode.postMessage({
+              type: 'confirm_response',
+              requestId: currentConfirmRequestId,
+              selectedOption: 'cancel'
+            });
+            currentConfirmRequestId = null;
+          }
+        }
+      };
+
+      // 键盘快捷键支持
+      document.addEventListener('keydown', function(e) {
+        if (confirmOverlay.style.display === 'flex') {
+          if (e.key === 'Escape') {
+            confirmClose.click();
+          } else if (e.key >= '1' && e.key <= '3') {
+            var buttons = confirmOverlay.querySelectorAll('.confirm-option-btn');
+            var index = parseInt(e.key) - 1;
+            if (buttons[index]) {
+              buttons[index].click();
+            }
+          }
+        }
+      });
+
+      // 处理来自扩展的确认请求
+      window.addEventListener('message', function(event) {
+        var message = event.data;
+        if (message.type === 'confirm_action') {
+          currentConfirmRequestId = message.requestId;
+          document.getElementById('confirmTitle').textContent = message.title;
+          document.getElementById('confirmDescription').textContent = message.description;
+          document.getElementById('confirmDetails').textContent = message.details;
+          
+          var footer = document.getElementById('confirmFooter');
+          footer.innerHTML = '';
+          
+          for (var i = 0; i < message.options.length; i++) {
+            var option = message.options[i];
+            var btn = document.createElement('button');
+            btn.className = 'confirm-option-btn ' + (option.primary ? 'primary' : '');
+            btn.textContent = option.label;
+            btn.onclick = (function(optionId) {
+              return function() {
+                confirmOverlay.style.display = 'none';
+                vscode.postMessage({
+                  type: 'confirm_response',
+                  requestId: currentConfirmRequestId,
+                  selectedOption: optionId
+                });
+                currentConfirmRequestId = null;
+              };
+            })(option.id);
+            footer.appendChild(btn);
+          }
+          
+          confirmOverlay.style.display = 'flex';
+          // 聚焦到第一个按钮
+          setTimeout(function() {
+            var firstBtn = footer.querySelector('.confirm-option-btn');
+            if (firstBtn) firstBtn.focus();
+          }, 100);
         }
       });
 
