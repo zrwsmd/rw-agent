@@ -131,6 +131,47 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       background: var(--vscode-toolbar-hoverBackground);
       opacity: 1;
     }
+
+    /* Token 使用显示 */
+    .token-usage {
+      display: none;
+      padding: 8px 12px;
+      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid var(--vscode-panel-border);
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+    }
+    .token-usage.show {
+      display: block;
+    }
+    .token-usage-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .token-usage-progress {
+      flex: 1;
+      height: 6px;
+      background: var(--vscode-input-background);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .token-usage-fill {
+      height: 100%;
+      background: var(--vscode-terminal-ansiGreen);
+      transition: background-color 0.3s;
+    }
+    .token-usage-fill.warning {
+      background: var(--vscode-editorWarning-foreground);
+    }
+    .token-usage-fill.danger {
+      background: var(--vscode-errorForeground);
+    }
+    .token-usage-text {
+      font-size: 11px;
+      white-space: nowrap;
+    }
     
     /* 消息区域 */
     .messages {
@@ -578,6 +619,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     <button class="toolbar-btn" id="settingsBtn" title="设置 API 密钥">⚙️ 设置</button>
     <button class="toolbar-btn" id="clearBtn" title="清空对话">🗑️ 清空</button>
   </div>
+
+  <div class="token-usage" id="tokenUsage">
+    <div>Token 使用: <span id="tokenCurrent">0</span> / <span id="tokenLimit">8192</span></div>
+    <div class="token-usage-bar">
+      <div class="token-usage-progress">
+        <div class="token-usage-fill" id="tokenFill" style="width: 0%"></div>
+      </div>
+      <div class="token-usage-text"><span id="tokenPercentage">0</span>%</div>
+    </div>
+  </div>
   
   <div class="messages" id="messages">
     <div class="empty-state" id="emptyState">
@@ -929,6 +980,29 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             skillDiv.innerHTML = '<span class="skill-icon">🎯</span><div class="skill-info"><div class="skill-name">使用 Skill: ' + evt.name + '</div>' + (evt.description ? '<div class="skill-desc">' + evt.description + '</div>' : '') + '</div>';
             messagesEl.appendChild(skillDiv);
             messagesEl.scrollTop = messagesEl.scrollHeight;
+          } else if (evt.type === 'token_usage') {
+            // 显示 Token 使用情况
+            var tokenUsageEl = document.getElementById('tokenUsage');
+            var tokenCurrentEl = document.getElementById('tokenCurrent');
+            var tokenLimitEl = document.getElementById('tokenLimit');
+            var tokenPercentageEl = document.getElementById('tokenPercentage');
+            var tokenFillEl = document.getElementById('tokenFill');
+            
+            tokenCurrentEl.textContent = evt.current;
+            tokenLimitEl.textContent = evt.limit;
+            tokenPercentageEl.textContent = Math.round(evt.percentage);
+            tokenFillEl.style.width = evt.percentage + '%';
+            
+            // 根据使用百分比改变颜色
+            tokenFillEl.classList.remove('warning', 'danger');
+            if (evt.percentage >= 90) {
+              tokenFillEl.classList.add('danger');
+            } else if (evt.percentage >= 75) {
+              tokenFillEl.classList.add('warning');
+            }
+            
+            // 显示 Token 使用区域
+            tokenUsageEl.classList.add('show');
           }
           // action, observation, plan, step_complete 等技术细节不显示
         }

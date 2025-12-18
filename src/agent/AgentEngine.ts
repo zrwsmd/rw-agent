@@ -79,6 +79,16 @@ export class AgentEngineImpl implements IAgentEngine {
       timestamp: Date.now(),
     });
 
+    // 发送 Token 使用信息
+    const tokenUsage = this.contextManager.getTokenUsage();
+    yield {
+      type: 'token_usage',
+      current: tokenUsage.current,
+      limit: tokenUsage.limit,
+      remaining: tokenUsage.remaining,
+      percentage: tokenUsage.percentage,
+    };
+
     const context = this.contextManager.getContext(8000);
 
     if (mode === 'react') {

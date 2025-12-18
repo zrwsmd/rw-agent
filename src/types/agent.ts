@@ -28,7 +28,14 @@ export type AgentEvent =
   | { type: 'answer'; content: string }
   | { type: 'error'; message: string }
   | { type: 'token'; content: string }
-  | { type: 'skill'; name: string; description?: string };
+  | { type: 'skill'; name: string; description?: string }
+  | {
+      type: 'token_usage';
+      current: number;
+      limit: number;
+      remaining: number;
+      percentage: number;
+    };
 
 /**
  * Agent 引擎接口
