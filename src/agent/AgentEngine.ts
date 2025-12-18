@@ -222,6 +222,9 @@ export class AgentEngineImpl implements IAgentEngine {
 
     let finalAnswer = '';
 
+    // 跟踪当前工具调用
+    let currentToolCall: { tool: string; params: unknown } | null = null;
+
     for await (const event of this.functionCallingExecutor.execute(
       goal,
       context,
@@ -235,6 +238,24 @@ export class AgentEngineImpl implements IAgentEngine {
           tool: event.tool,
           params: event.params,
         };
+        // 记录当前工具调用
+        currentToolCall = { tool: event.tool, params: event.params };
+      } else if (event.type === 'observation') {
+        // 保存工具调用结果到上下文
+        if (currentToolCall) {
+          this.contextManager.addMessage({
+            id: this.generateId(),
+            role: 'assistant',
+            content: `使用工具 ${currentToolCall.tool}`,
+            timestamp: Date.now(),
+            toolCall: {
+              name: currentToolCall.tool,
+              parameters: currentToolCall.params as Record<string, unknown>,
+              result: event.result,
+            },
+          });
+          currentToolCall = null;
+        }
       } else if (event.type === 'answer') {
         finalAnswer = event.content;
       }
@@ -276,6 +297,8 @@ export class AgentEngineImpl implements IAgentEngine {
     }
 
     let finalAnswer = '';
+    // 跟踪当前工具调用
+    let currentToolCall: { tool: string; params: unknown } | null = null;
 
     for await (const event of this.reactExecutor.execute(
       goal,
@@ -292,6 +315,24 @@ export class AgentEngineImpl implements IAgentEngine {
           tool: event.tool,
           params: event.params,
         };
+        // 记录当前工具调用
+        currentToolCall = { tool: event.tool, params: event.params };
+      } else if (event.type === 'observation') {
+        // 保存工具调用结果到上下文
+        if (currentToolCall) {
+          this.contextManager.addMessage({
+            id: this.generateId(),
+            role: 'assistant',
+            content: `使用工具 ${currentToolCall.tool}`,
+            timestamp: Date.now(),
+            toolCall: {
+              name: currentToolCall.tool,
+              parameters: currentToolCall.params as Record<string, unknown>,
+              result: event.result,
+            },
+          });
+          currentToolCall = null;
+        }
       } else if (event.type === 'answer') {
         finalAnswer = event.content;
       }
