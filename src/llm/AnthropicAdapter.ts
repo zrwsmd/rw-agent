@@ -310,9 +310,18 @@ export class AnthropicAdapter extends BaseLLMAdapter {
 
             // 处理工具调用输入累积
             if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta') {
-              const blockId = parsed.index; // 需要追踪 block index
-              // Anthropic 流式返回 JSON 片段，需要累积
-              // 实际实现中可能需要更复杂的处理
+              const blockIndex = parsed.index;
+              const partialJson = parsed.delta.partial_json;
+              
+              // 找到对应的工具调用并累积 JSON
+              const toolCallEntries = Array.from(toolCallsBuffer.entries());
+              if (blockIndex < toolCallEntries.length) {
+                const [toolId, toolCall] = toolCallEntries[blockIndex];
+                if (toolCall.function) {
+                  toolCall.function.arguments += partialJson;
+                  toolCallsBuffer.set(toolId, toolCall);
+                }
+              }
             }
           } catch {
             // 忽略解析错误

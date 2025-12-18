@@ -2,6 +2,16 @@ import * as vscode from 'vscode';
 import { AgentEvent, AgentMode } from '../types/agent';
 
 /**
+ * 对话列表项
+ */
+export interface ConversationItem {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messageCount: number;
+}
+
+/**
  * UI 消息类型
  */
 export type UIMessage =
@@ -12,7 +22,13 @@ export type UIMessage =
   | { type: 'set_mode'; mode: AgentMode }
   | { type: 'open_settings' }
   | { type: 'save_settings'; provider: string; apiKey: string; model: string }
-  | { type: 'ready' };
+  | { type: 'ready' }
+  | { type: 'new_conversation' }
+  | { type: 'load_conversation'; id: string }
+  | { type: 'delete_conversation'; id: string }
+  | { type: 'list_conversations' }
+  | { type: 'conversation_list'; conversations: ConversationItem[] }
+  | { type: 'conversation_loaded'; messages: Array<{ role: string; content: string }> };
 
 /**
  * 聊天面板提供者
@@ -446,6 +462,109 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     .empty-state-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
     .empty-state-text { font-size: 14px; }
     
+    /* 历史对话面板 */
+    .history-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    .history-overlay.show {
+      display: flex;
+    }
+    .history-panel {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px;
+      width: 90%;
+      max-width: 400px;
+      max-height: 70vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .history-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .history-close {
+      background: transparent;
+      border: none;
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      padding: 4px;
+      font-size: 16px;
+      opacity: 0.7;
+    }
+    .history-close:hover {
+      opacity: 1;
+    }
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+    .history-item:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .history-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .history-item-title {
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .history-item-meta {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      margin-top: 2px;
+    }
+    .history-item-delete {
+      background: transparent;
+      border: none;
+      color: var(--vscode-errorForeground);
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .history-item:hover .history-item-delete {
+      opacity: 0.7;
+    }
+    .history-item-delete:hover {
+      opacity: 1;
+    }
+    .history-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--vscode-descriptionForeground);
+    }
+
     /* 设置面板 */
     .settings-overlay {
       display: none;
@@ -616,8 +735,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       <option value="plan">📋 计划</option>
     </select>
     <div class="toolbar-spacer"></div>
+    <button class="toolbar-btn" id="newChatBtn" title="新建对话">➕ 新建</button>
+    <button class="toolbar-btn" id="historyBtn" title="历史对话">� 历史</button>
     <button class="toolbar-btn" id="settingsBtn" title="设置 API 密钥">⚙️ 设置</button>
-    <button class="toolbar-btn" id="clearBtn" title="清空对话">🗑️ 清空</button>
   </div>
 
   <div class="token-usage" id="tokenUsage">
@@ -642,6 +762,19 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       <textarea id="input" placeholder="输入消息，按 Enter 发送..." rows="1"></textarea>
       <button class="send-btn" id="sendBtn">发送</button>
       <button class="cancel-btn" id="cancelBtn">⏹ 停止</button>
+    </div>
+  </div>
+
+  <!-- 历史对话面板 -->
+  <div class="history-overlay" id="historyOverlay">
+    <div class="history-panel">
+      <div class="history-header">
+        <div class="history-title">📜 历史对话</div>
+        <button class="history-close" id="historyClose">×</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty">暂无历史对话</div>
+      </div>
     </div>
   </div>
 
@@ -715,7 +848,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       var sendBtn = document.getElementById('sendBtn');
       var modeSelect = document.getElementById('modeSelect');
       var settingsBtn = document.getElementById('settingsBtn');
-      var clearBtn = document.getElementById('clearBtn');
       
       var isProcessing = false;
       var currentAssistantMessage = null;
@@ -913,10 +1045,69 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
       };
       
-      clearBtn.onclick = function() {
+      // 新建对话按钮
+      var newChatBtn = document.getElementById('newChatBtn');
+      newChatBtn.onclick = function() {
         messagesEl.innerHTML = '<div class="empty-state" id="emptyState"><div class="empty-state-icon">🤖</div><div class="empty-state-text">开始对话吧！</div></div>';
-        vscode.postMessage({ type: 'clear_chat' });
+        document.getElementById('tokenUsage').classList.remove('show');
+        vscode.postMessage({ type: 'new_conversation' });
       };
+
+      // 历史对话按钮
+      var historyBtn = document.getElementById('historyBtn');
+      var historyOverlay = document.getElementById('historyOverlay');
+      var historyClose = document.getElementById('historyClose');
+      var historyList = document.getElementById('historyList');
+
+      historyBtn.onclick = function() {
+        vscode.postMessage({ type: 'list_conversations' });
+        historyOverlay.classList.add('show');
+      };
+
+      historyClose.onclick = function() {
+        historyOverlay.classList.remove('show');
+      };
+
+      historyOverlay.onclick = function(e) {
+        if (e.target === historyOverlay) {
+          historyOverlay.classList.remove('show');
+        }
+      };
+
+      function renderHistoryList(conversations) {
+        if (!conversations || conversations.length === 0) {
+          historyList.innerHTML = '<div class="history-empty">暂无历史对话</div>';
+          return;
+        }
+
+        historyList.innerHTML = conversations.map(function(conv) {
+          var date = new Date(conv.updatedAt).toLocaleString();
+          return '<div class="history-item" data-id="' + conv.id + '">' +
+            '<div class="history-item-info">' +
+            '<div class="history-item-title">' + conv.title + '</div>' +
+            '<div class="history-item-meta">' + conv.messageCount + ' 条消息 · ' + date + '</div>' +
+            '</div>' +
+            '<button class="history-item-delete" data-id="' + conv.id + '">🗑️</button>' +
+            '</div>';
+        }).join('');
+
+        // 绑定点击事件
+        historyList.querySelectorAll('.history-item').forEach(function(item) {
+          item.onclick = function(e) {
+            if (e.target.classList.contains('history-item-delete')) {
+              e.stopPropagation();
+              var id = e.target.getAttribute('data-id');
+              if (confirm('确定删除这个对话吗？')) {
+                vscode.postMessage({ type: 'delete_conversation', id: id });
+              }
+            } else {
+              var id = item.getAttribute('data-id');
+              vscode.postMessage({ type: 'load_conversation', id: id });
+              historyOverlay.classList.remove('show');
+            }
+          };
+        });
+      }
       
       modeSelect.onchange = function() {
         vscode.postMessage({ type: 'set_mode', mode: modeSelect.value });
@@ -1005,6 +1196,18 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             tokenUsageEl.classList.add('show');
           }
           // action, observation, plan, step_complete 等技术细节不显示
+        } else if (message.type === 'conversation_list') {
+          // 渲染历史对话列表
+          renderHistoryList(message.conversations);
+        } else if (message.type === 'conversation_loaded') {
+          // 加载对话消息
+          var empty = document.getElementById('emptyState');
+          if (empty) empty.remove();
+          messagesEl.innerHTML = '';
+          
+          message.messages.forEach(function(msg) {
+            addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content, msg.content);
+          });
         }
       });
 

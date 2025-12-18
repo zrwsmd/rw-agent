@@ -1,16 +1,135 @@
 // src/agent/FunctionCallingExecutor.ts
 
 import { AgentEvent } from '../types/agent';
-import { LLMAdapter, LLMMessage, ToolCall } from '../types/llm';
+import { LLMAdapter, LLMMessage } from '../types/llm';
 import { ToolRegistry, ToolResult } from '../types/tool';
 
 const MAX_ITERATIONS = 20;
+const MAX_TOOL_RETRIES = 3;
+const MAX_LLM_RETRIES = 2;
 
 /**
  * 函数调用执行器（使用原生工具调用）
  */
 export class FunctionCallingExecutor {
   private cancelled = false;
+
+  /**
+   * 带重试的 LLM 调用
+   */
+  private async callLLMWithRetry(
+    llm: LLMAdapter,
+    messages: LLMMessage[],
+    toolDefinitions: any[],
+    retryCount = 0
+  ): Promise<any> {
+    try {
+      return await llm.completeWithTools(messages, {
+        tools: toolDefinitions,
+        toolChoice: 'auto',
+        temperature: 0.7,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      console.error(`[FunctionCalling] LLM 调用失败 (尝试 ${retryCount + 1}/${MAX_LLM_RETRIES + 1}):`, errorMessage);
+      
+      if (retryCount < MAX_LLM_RETRIES) {
+        // 等待一段时间后重试
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return this.callLLMWithRetry(llm, messages, toolDefinitions, retryCount + 1);
+      }
+      
+      throw new Error(`LLM 调用失败，已重试 ${MAX_LLM_RETRIES} 次: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * 带重试的工具执行
+   */
+  private async executeToolWithRetry(
+    tool: any,
+    params: Record<string, unknown>,
+    toolName: string,
+    retryCount = 0
+  ): Promise<ToolResult> {
+    try {
+      return await tool.execute(params);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      console.error(`[FunctionCalling] 工具 "${toolName}" 执行失败 (尝试 ${retryCount + 1}/${MAX_TOOL_RETRIES + 1}):`, errorMessage);
+      
+      if (retryCount < MAX_TOOL_RETRIES) {
+        // 对于某些错误类型，可以尝试重试
+        if (this.isRetryableError(error)) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (retryCount + 1)));
+          return this.executeToolWithRetry(tool, params, toolName, retryCount + 1);
+        }
+      }
+      
+      return {
+        success: false,
+        output: '',
+        error: `工具执行失败，已重试 ${retryCount} 次: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 判断错误是否可以重试
+   */
+  private isRetryableError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    
+    const message = error.message.toLowerCase();
+    
+    // 网络相关错误可以重试
+    if (message.includes('network') || 
+        message.includes('timeout') || 
+        message.includes('connection') ||
+        message.includes('econnreset') ||
+        message.includes('enotfound')) {
+      return true;
+    }
+    
+    // 临时服务器错误可以重试
+    if (message.includes('500') || 
+        message.includes('502') || 
+        message.includes('503') || 
+        message.includes('504')) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * 生成错误恢复建议
+   */
+  private generateErrorRecoveryAdvice(error: string, toolName: string): string {
+    const advice = [];
+    
+    if (error.includes('参数') || error.includes('parameter')) {
+      advice.push('请检查工具参数是否正确');
+    }
+    
+    if (error.includes('权限') || error.includes('permission')) {
+      advice.push('请检查是否有足够的权限执行此操作');
+    }
+    
+    if (error.includes('文件') || error.includes('file')) {
+      advice.push('请检查文件路径是否存在且可访问');
+    }
+    
+    if (error.includes('网络') || error.includes('network')) {
+      advice.push('请检查网络连接是否正常');
+    }
+    
+    if (advice.length === 0) {
+      advice.push('请尝试使用其他方法或工具完成任务');
+    }
+    
+    return `工具 "${toolName}" 执行失败: ${error}\n\n建议: ${advice.join('，')}`;
+  }
 
   /**
    * 执行函数调用循环
@@ -43,12 +162,15 @@ export class FunctionCallingExecutor {
 
       console.log(`[FunctionCalling] 迭代 ${iteration}/${MAX_ITERATIONS}`);
 
-      // 调用 LLM（支持工具调用）
-      const response = await llm.completeWithTools(messages, {
-        tools: toolDefinitions,
-        toolChoice: 'auto',
-        temperature: 0.7,
-      });
+      // 调用 LLM（支持工具调用，带重试）
+      let response;
+      try {
+        response = await this.callLLMWithRetry(llm, messages, toolDefinitions);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        yield { type: 'error', message: `LLM 调用失败: ${errorMessage}` };
+        return;
+      }
 
       console.log('[FunctionCalling] LLM 响应:', {
         content: response.content?.substring(0, 100),
@@ -113,18 +235,10 @@ export class FunctionCallingExecutor {
           result = {
             success: false,
             output: '',
-            error: `工具 "${toolName}" 不存在`,
+            error: `工具 "${toolName}" 不存在。可用工具: ${toolRegistry.list().map(t => t.name).join(', ')}`,
           };
         } else {
-          try {
-            result = await tool.execute(params);
-          } catch (error) {
-            result = {
-              success: false,
-              output: '',
-              error: error instanceof Error ? error.message : '执行工具时发生错误',
-            };
-          }
+          result = await this.executeToolWithRetry(tool, params, toolName);
         }
 
         console.log('[FunctionCalling] 工具结果:', {
@@ -137,9 +251,24 @@ export class FunctionCallingExecutor {
         yield { type: 'observation', result };
 
         // 构造工具响应消息
-        const toolResponse = result.success
-          ? result.output
-          : `错误: ${result.error || result.output || '未知错误'}`;
+        let toolResponse: string;
+        if (result.success) {
+          toolResponse = result.output;
+        } else {
+          const errorAdvice = this.generateErrorRecoveryAdvice(
+            result.error || '未知错误', 
+            toolName
+          );
+          toolResponse = errorAdvice;
+          
+          // 对于严重错误，发送错误事件
+          if (result.error && !this.isRetryableError(new Error(result.error))) {
+            yield { 
+              type: 'error', 
+              message: `工具 "${toolName}" 执行失败: ${result.error}` 
+            };
+          }
+        }
 
         // 添加工具响应到消息历史
         messages.push({

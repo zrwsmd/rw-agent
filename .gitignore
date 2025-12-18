@@ -3,3 +3,6 @@ dist/
 *.vsix
 .vscode-test/
 coverage/
+
+# VSCode Agent 对话历史
+.vscode-agent/

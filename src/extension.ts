@@ -7,23 +7,24 @@ import { createLLMAdapter } from './llm';
 import { createSkillsManager } from './skills';
 import { AgentMode } from './types/agent';
 import { LLMConfig } from './types/llm';
-import {
-  createConversationSerializer,
-  ConversationSerializerImpl,
-} from './serializer';
+import { ConversationStorage, createConversationStorage } from './storage';
 import { Conversation } from './types/conversation';
 
 let agentEngine: AgentEngineImpl | null = null;
 let currentMode: AgentMode = 'react';
 let chatPanelProvider: ChatPanelProvider | null = null;
-let conversationSerializer: ConversationSerializerImpl | null = null;
+let conversationStorage: ConversationStorage | null = null;
+let currentConversation: Conversation | null = null;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('VSCode Agent 扩展已激活');
 
+  // 获取工作区根目录
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+
   // 创建聊天面板提供者
   chatPanelProvider = new ChatPanelProvider(context.extensionUri);
-  conversationSerializer = createConversationSerializer() as ConversationSerializerImpl;
+  conversationStorage = createConversationStorage(context, workspaceRoot);
 
   // 注册 webview 提供者
   context.subscriptions.push(
@@ -57,7 +58,63 @@ export function activate(context: vscode.ExtensionContext) {
         if (agentEngine) {
           agentEngine.getContextManager().clear();
         }
-        await context.workspaceState.update('conversation', undefined);
+        currentConversation = null;
+        break;
+
+      case 'new_conversation':
+        if (agentEngine) {
+          agentEngine.getContextManager().clear();
+        }
+        currentConversation = conversationStorage?.createConversation() || null;
+        if (currentConversation && conversationStorage) {
+          await conversationStorage.setCurrentConversationId(currentConversation.id);
+        }
+        break;
+
+      case 'list_conversations':
+        if (conversationStorage) {
+          const conversations = await conversationStorage.listConversations();
+          chatPanelProvider?.postMessage({
+            type: 'conversation_list',
+            conversations: conversations,
+          });
+        }
+        break;
+
+      case 'load_conversation':
+        if (conversationStorage) {
+          const conv = await conversationStorage.loadConversation(message.id);
+          if (conv) {
+            currentConversation = conv;
+            await conversationStorage.setCurrentConversationId(conv.id);
+            
+            // 恢复到 context manager
+            if (agentEngine) {
+              agentEngine.getContextManager().clear();
+              for (const msg of conv.messages) {
+                agentEngine.getContextManager().addMessage(msg);
+              }
+            }
+            
+            // 发送消息到 UI
+            chatPanelProvider?.postMessage({
+              type: 'conversation_loaded',
+              messages: conv.messages.map(m => ({ role: m.role, content: m.content })),
+            });
+          }
+        }
+        break;
+
+      case 'delete_conversation':
+        if (conversationStorage) {
+          await conversationStorage.deleteConversation(message.id);
+          // 刷新列表
+          const conversations = await conversationStorage.listConversations();
+          chatPanelProvider?.postMessage({
+            type: 'conversation_list',
+            conversations: conversations,
+          });
+        }
         break;
 
       case 'cancel':
@@ -245,26 +302,32 @@ async function handleUserMessage(
 async function saveConversation(
   context: vscode.ExtensionContext
 ): Promise<void> {
-  if (!agentEngine || !conversationSerializer) {
+  if (!agentEngine || !conversationStorage) {
     return;
   }
 
   const history = agentEngine.getContextManager().getHistory();
-  const conversation: Conversation = {
-    id: 'current',
-    title: '当前对话',
-    messages: history,
-    metadata: {
-      model: vscode.workspace.getConfiguration('vscode-agent').get('llm.model') || 'unknown',
-      totalTokens: 0,
-      toolsUsed: [],
-    },
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+  
+  // 如果没有当前对话，创建一个新的
+  if (!currentConversation) {
+    currentConversation = conversationStorage.createConversation();
+    await conversationStorage.setCurrentConversationId(currentConversation.id);
+  }
+
+  // 更新对话内容
+  currentConversation.messages = history;
+  currentConversation.metadata = {
+    model: vscode.workspace.getConfiguration('vscode-agent').get('llm.model') || 'unknown',
+    totalTokens: agentEngine.getContextManager().estimateCurrentTokens(),
+    toolsUsed: [],
   };
 
-  const json = conversationSerializer.serialize(conversation);
-  await context.workspaceState.update('conversation', json);
+  // 如果是第一条消息，用它生成标题
+  if (history.length === 1 && history[0].role === 'user') {
+    currentConversation.title = conversationStorage.generateTitleFromMessage(history[0].content);
+  }
+
+  await conversationStorage.saveConversation(currentConversation);
 }
 
 /**
@@ -273,32 +336,24 @@ async function saveConversation(
 async function restoreConversation(
   context: vscode.ExtensionContext
 ): Promise<void> {
-  if (!conversationSerializer) {
-    return;
-  }
-
-  const json = context.workspaceState.get<string>('conversation');
-  if (!json) {
+  if (!conversationStorage) {
     return;
   }
 
   try {
-    const conversation = conversationSerializer.deserialize(json);
+    // 尝试加载当前对话
+    const conversation = await conversationStorage.loadCurrentConversation();
+    if (!conversation || conversation.messages.length === 0) {
+      return;
+    }
+
+    currentConversation = conversation;
 
     // 恢复消息到 UI
-    for (const msg of conversation.messages) {
-      if (msg.role === 'user') {
-        chatPanelProvider?.postMessage({
-          type: 'agent_event',
-          event: { type: 'answer', content: `[用户] ${msg.content}` },
-        });
-      } else if (msg.role === 'assistant') {
-        chatPanelProvider?.postMessage({
-          type: 'agent_event',
-          event: { type: 'answer', content: msg.content },
-        });
-      }
-    }
+    chatPanelProvider?.postMessage({
+      type: 'conversation_loaded',
+      messages: conversation.messages.map(m => ({ role: m.role, content: m.content })),
+    });
 
     // 恢复到 context manager
     if (agentEngine) {

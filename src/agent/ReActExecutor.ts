@@ -1,8 +1,10 @@
 import { AgentEvent } from '../types/agent';
 import { LLMAdapter, LLMMessage } from '../types/llm';
-import { Tool, ToolRegistry, ToolResult } from '../types/tool';
+import { ToolRegistry, ToolResult } from '../types/tool';
 
 const MAX_ITERATIONS = 20;
+const MAX_TOOL_RETRIES = 3;
+const MAX_LLM_RETRIES = 2;
 
 /**
  * ReAct 步骤
@@ -17,6 +19,96 @@ interface ReActStep {
  */
 export class ReActExecutor {
   private cancelled = false;
+
+  /**
+   * 带重试的 LLM 调用
+   */
+  private async callLLMWithRetry(
+    llm: LLMAdapter,
+    messages: LLMMessage[],
+    retryCount = 0
+  ): Promise<string> {
+    try {
+      let response = '';
+      for await (const token of llm.streamComplete(messages)) {
+        if (this.cancelled) {
+          throw new Error('操作已取消');
+        }
+        response += token;
+      }
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      console.error(`[ReAct] LLM 调用失败 (尝试 ${retryCount + 1}/${MAX_LLM_RETRIES + 1}):`, errorMessage);
+      
+      if (retryCount < MAX_LLM_RETRIES && !this.cancelled) {
+        // 等待一段时间后重试
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return this.callLLMWithRetry(llm, messages, retryCount + 1);
+      }
+      
+      throw new Error(`LLM 调用失败，已重试 ${MAX_LLM_RETRIES} 次: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * 带重试的工具执行
+   */
+  private async executeToolWithRetry(
+    tool: any,
+    params: Record<string, unknown>,
+    toolName: string,
+    retryCount = 0
+  ): Promise<ToolResult> {
+    try {
+      return await tool.execute(params);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      console.error(`[ReAct] 工具 "${toolName}" 执行失败 (尝试 ${retryCount + 1}/${MAX_TOOL_RETRIES + 1}):`, errorMessage);
+      
+      if (retryCount < MAX_TOOL_RETRIES) {
+        // 对于某些错误类型，可以尝试重试
+        if (this.isRetryableError(error)) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (retryCount + 1)));
+          return this.executeToolWithRetry(tool, params, toolName, retryCount + 1);
+        }
+      }
+      
+      return {
+        success: false,
+        output: '',
+        error: `工具执行失败，已重试 ${retryCount} 次: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 判断错误是否可以重试
+   */
+  private isRetryableError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    
+    const message = error.message.toLowerCase();
+    
+    // 网络相关错误可以重试
+    if (message.includes('network') || 
+        message.includes('timeout') || 
+        message.includes('connection') ||
+        message.includes('econnreset') ||
+        message.includes('enotfound')) {
+      return true;
+    }
+    
+    // 临时服务器错误可以重试
+    if (message.includes('500') || 
+        message.includes('502') || 
+        message.includes('503') || 
+        message.includes('504')) {
+      return true;
+    }
+    
+    return false;
+  }
 
   /**
    * 执行 ReAct 循环
@@ -48,18 +140,21 @@ export class ReActExecutor {
         ...context,
       ];
 
-      // 获取 LLM 响应
-      let response = '';
-      for await (const token of llm.streamComplete(messages)) {
-        if (this.cancelled) {
-          break;
+      // 获取 LLM 响应（带重试）
+      let response: string;
+      try {
+        response = '';
+        for await (const token of llm.streamComplete(messages)) {
+          if (this.cancelled) {
+            yield { type: 'error', message: '操作已取消' };
+            return;
+          }
+          response += token;
+          yield { type: 'token', content: token };
         }
-        response += token;
-        yield { type: 'token', content: token };
-      }
-
-      if (this.cancelled) {
-        yield { type: 'error', message: '操作已取消' };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        yield { type: 'error', message: `LLM 调用失败: ${errorMessage}` };
         return;
       }
 
@@ -88,18 +183,10 @@ export class ReActExecutor {
         result = {
           success: false,
           output: '',
-          error: `工具 "${step.action.tool}" 不存在`,
+          error: `工具 "${step.action.tool}" 不存在。可用工具: ${toolRegistry.list().map(t => t.name).join(', ')}`,
         };
       } else {
-        try {
-          result = await tool.execute(step.action.parameters);
-        } catch (error) {
-          result = {
-            success: false,
-            output: '',
-            error: error instanceof Error ? error.message : '执行工具时发生错误',
-          };
-        }
+        result = await this.executeToolWithRetry(tool, step.action.parameters, step.action.tool);
       }
 
       // 发出观察事件
