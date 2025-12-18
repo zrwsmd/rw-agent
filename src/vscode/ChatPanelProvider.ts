@@ -801,9 +801,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       <option value="plan">📋 计划</option>
     </select>
     <div class="toolbar-spacer"></div>
-    <button class="toolbar-btn" id="newChatBtn" title="新建对话">➕ 新建</button>
-    <button class="toolbar-btn" id="historyBtn" title="历史对话">� 历史</button>
-    <button class="toolbar-btn" id="settingsBtn" title="设置 API 密钥">⚙️ 设置</button>
+    <button class="toolbar-btn" id="newChatBtn" title="New Chat">➕</button>
+    <button class="toolbar-btn" id="historyBtn" title="History">� 历史</button>
+    <button class="toolbar-btn" id="settingsBtn" title="Settings">⚙️</button>
   </div>
 
   <div class="token-usage" id="tokenUsage">
@@ -835,7 +835,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   <div class="history-overlay" id="historyOverlay">
     <div class="history-panel">
       <div class="history-header">
-        <div class="history-title">📜 历史对话</div>
+        <div class="history-title">📜对话</div>
         <button class="history-close" id="historyClose">×</button>
       </div>
       <div class="history-list" id="historyList">
