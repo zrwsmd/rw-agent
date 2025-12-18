@@ -1,4 +1,4 @@
-// src/agent/AgentEngine.ts (Updated)
+// src/agent/AgentEngine.ts - Full Optimized Implementation
 
 import {
   AgentEngine as IAgentEngine,
@@ -13,10 +13,10 @@ import { ReActExecutor } from './ReActExecutor';
 import { PlanExecutor } from './PlanExecutor';
 import { FunctionCallingExecutor } from './FunctionCallingExecutor';
 import { Plan } from '../types/plan';
-import { SkillsManager } from '../skills';
+import { SkillsManager, Skill } from '../skills';
 
 /**
- * Agent 引擎实现
+ * Agent 引擎实现 - 优化版
  */
 export class AgentEngineImpl implements IAgentEngine {
   private contextManager: ContextManagerImpl;
@@ -29,6 +29,9 @@ export class AgentEngineImpl implements IAgentEngine {
 
   private state: AgentState = { status: 'idle' };
   private currentPlan: Plan | null = null;
+  
+  // ✅ OPTIMIZATION: Cache matched skills to avoid re-matching
+  private cachedMatchedSkills: Skill[] = [];
 
   constructor(
     contextManager: ContextManagerImpl,
@@ -53,7 +56,7 @@ export class AgentEngineImpl implements IAgentEngine {
   }
 
   /**
-   * 处理用户消息
+   * 处理用户消息 - 优化版
    */
   async *processMessage(
     message: string,
@@ -92,10 +95,20 @@ export class AgentEngineImpl implements IAgentEngine {
     const context = this.contextManager.getContext(8000);
 
     if (mode === 'react') {
-      // 检查是否需要使用工具
-      const needsTools = this.needsToolUsage(message);
+      // ✅ OPTIMIZATION: Check tools AND cache matched skills in one pass
+      const needsTools = this.checkToolsAndCacheSkills(message);
+      
       if (needsTools) {
-        // 如果 LLM 支持原生函数调用，优先使用
+        // Emit skill events from cached skills
+        for (const skill of this.cachedMatchedSkills) {
+          yield { 
+            type: 'skill', 
+            name: skill.name, 
+            description: skill.config.description 
+          };
+        }
+
+        // Choose executor based on LLM capabilities
         if (this.llmAdapter.supportsNativeTools()) {
           console.log('[AgentEngine] 使用原生函数调用模式');
           yield* this.executeFunctionCalling(message, context);
@@ -104,27 +117,39 @@ export class AgentEngineImpl implements IAgentEngine {
           yield* this.executeReAct(message, context);
         }
       } else {
+        // Simple chat without tools
         yield* this.executeSimpleChat(context);
       }
     } else {
+      // Plan mode
       yield* this.executePlan(message, context);
     }
+
+    // ✅ Clear cache after processing
+    this.cachedMatchedSkills = [];
   }
 
   /**
-   * 判断是否需要使用工具
+   * ✅ OPTIMIZATION: Combined tool check + skill caching
+   * This prevents Skills from being matched multiple times
    */
-  private needsToolUsage(message: string): boolean {
-    // 首先检查是否有匹配的 Skills
+  private checkToolsAndCacheSkills(message: string): boolean {
+    // Reset cache
+    this.cachedMatchedSkills = [];
+
+    // Check Skills first (higher priority)
     if (this.skillsManager) {
-      const matchedSkills = this.skillsManager.matchSkills(message);
-      if (matchedSkills.length > 0) {
-        console.log('[AgentEngine] 检测到匹配的 Skills，启用工具模式:', matchedSkills.map(s => s.name));
+      this.cachedMatchedSkills = this.skillsManager.matchSkills(message);
+      if (this.cachedMatchedSkills.length > 0) {
+        console.log(
+          '[AgentEngine] 检测到匹配的 Skills，启用工具模式:', 
+          this.cachedMatchedSkills.map(s => s.name)
+        );
         return true;
       }
     }
     
-    // 然后检查传统的工具关键词
+    // Fallback to keyword detection for non-skill tool usage
     const toolKeywords = [
       '文件', '读取', '写入', '创建', '修改', '删除',
       '搜索', '查找', '查看', '打开', '保存',
@@ -140,6 +165,7 @@ export class AgentEngineImpl implements IAgentEngine {
 
   /**
    * 简单聊天模式 - 直接调用 LLM
+   * ✅ OPTIMIZATION: Use cached skills instead of re-matching
    */
   private async *executeSimpleChat(
     context: { role: 'system' | 'user' | 'assistant'; content: string }[]
@@ -153,17 +179,14 @@ export class AgentEngineImpl implements IAgentEngine {
       
       let systemPrompt = '你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。';
       
-      if (this.skillsManager) {
+      // ✅ Use cached skills instead of re-matching
+      if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {
         const userMessages = context.filter(m => m.role === 'user');
-        const latestUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
-        const matchedSkills = this.skillsManager.matchSkills(latestUserMessage);
-        if (matchedSkills.length > 0) {
-          const skillsPrompt = this.skillsManager.generateSkillsPrompt(latestUserMessage);
-          systemPrompt += skillsPrompt;
-          for (const skill of matchedSkills) {
-            yield { type: 'skill', name: skill.name, description: skill.config.description };
-          }
-        }
+        const latestUserMessage = userMessages.length > 0 
+          ? userMessages[userMessages.length - 1].content 
+          : '';
+        const skillsPrompt = this.skillsManager.generateSkillsPrompt(latestUserMessage);
+        systemPrompt += skillsPrompt;
       }
       
       const messages = [
@@ -200,6 +223,7 @@ export class AgentEngineImpl implements IAgentEngine {
 
   /**
    * 执行函数调用模式（原生工具调用）
+   * ✅ OPTIMIZATION: Use cached skills instead of re-matching
    */
   private async *executeFunctionCalling(
     goal: string,
@@ -207,17 +231,11 @@ export class AgentEngineImpl implements IAgentEngine {
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '' };
 
-    // 注入 Skills
+    // ✅ Use cached skills (already matched in checkToolsAndCacheSkills)
     let skillsPrompt = '';
-    if (this.skillsManager) {
-      const matchedSkills = this.skillsManager.matchSkills(goal);
-      if (matchedSkills.length > 0) {
-        skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
-        console.log('[AgentEngine] Skills 注入:', matchedSkills.map(s => s.name));
-        for (const skill of matchedSkills) {
-          yield { type: 'skill', name: skill.name, description: skill.config.description };
-        }
-      }
+    if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {
+      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
+      console.log('[AgentEngine] Skills 注入:', this.cachedMatchedSkills.map(s => s.name));
     }
 
     let finalAnswer = '';
@@ -277,6 +295,7 @@ export class AgentEngineImpl implements IAgentEngine {
 
   /**
    * 执行 ReAct 模式（文本解析方式）
+   * ✅ OPTIMIZATION: Use cached skills instead of re-matching
    */
   private async *executeReAct(
     goal: string,
@@ -284,16 +303,11 @@ export class AgentEngineImpl implements IAgentEngine {
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '' };
 
+    // ✅ Use cached skills (already matched in checkToolsAndCacheSkills)
     let skillsPrompt = '';
-    if (this.skillsManager) {
-      const matchedSkills = this.skillsManager.matchSkills(goal);
-      if (matchedSkills.length > 0) {
-        skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
-        console.log('[AgentEngine] Skills 注入:', matchedSkills.map(s => s.name));
-        for (const skill of matchedSkills) {
-          yield { type: 'skill', name: skill.name, description: skill.config.description };
-        }
-      }
+    if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {
+      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
+      console.log('[AgentEngine] Skills 注入:', this.cachedMatchedSkills.map(s => s.name));
     }
 
     let finalAnswer = '';
@@ -405,12 +419,16 @@ export class AgentEngineImpl implements IAgentEngine {
 
   /**
    * 取消当前执行
+   * ✅ OPTIMIZATION: Also clear skill cache
    */
   cancel(): void {
     this.reactExecutor.cancel();
     this.planExecutor.cancel();
     this.functionCallingExecutor.cancel();
     this.state = { status: 'idle' };
+    
+    // ✅ Clear skill cache on cancel
+    this.cachedMatchedSkills = [];
     
     // 清理最后一条用户消息（被取消的请求）
     this.removeLastUserMessage();
@@ -462,11 +480,17 @@ export class AgentEngineImpl implements IAgentEngine {
     this.contextManager.setModel(model);
   }
 
+  /**
+   * 生成唯一 ID
+   */
   private generateId(): string {
     return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   }
 }
 
+/**
+ * 创建 Agent 引擎实例
+ */
 export function createAgentEngine(
   contextManager: ContextManagerImpl,
   toolRegistry: ToolRegistry,
