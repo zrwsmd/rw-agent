@@ -22,6 +22,8 @@ export type UIMessage =
   | { type: 'set_mode'; mode: AgentMode }
   | { type: 'open_settings' }
   | { type: 'save_settings'; provider: string; apiKey: string; model: string }
+  | { type: 'get_current_settings' }
+  | { type: 'current_settings'; provider: string; model: string; hasApiKey: boolean }
   | { type: 'ready' }
   | { type: 'new_conversation' }
   | { type: 'load_conversation'; id: string }
@@ -1269,7 +1271,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       };
       
       settingsBtn.onclick = function() {
-        updateModelOptions(providerSelect.value);
+        // 请求当前设置
+        vscode.postMessage({ type: 'get_current_settings' });
         settingsOverlay.classList.add('show');
       };
       
@@ -1292,11 +1295,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         var apiKey = apiKeyInput.value.trim();
         var model = modelSelect.value;
         
-        if (apiKey) {
+        // 检查是否已有 API Key
+        var apiKeyStatus = document.getElementById('apiKeyStatus');
+        var hasExistingKey = apiKeyStatus.classList.contains('set');
+        
+        if (apiKey || hasExistingKey) {
           vscode.postMessage({ 
             type: 'save_settings', 
             provider: provider,
-            apiKey: apiKey,
+            apiKey: apiKey, // 如果为空但有现有密钥，后端会保持现有密钥
             model: model
           });
           apiKeyInput.value = '';
@@ -1510,6 +1517,23 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           message.messages.forEach(function(msg) {
             addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content, msg.content);
           });
+        } else if (message.type === 'current_settings') {
+          // 更新设置面板的当前值
+          providerSelect.value = message.provider;
+          updateModelOptions(message.provider);
+          modelSelect.value = message.model;
+          
+          // 更新 API Key 状态显示
+          var apiKeyStatus = document.getElementById('apiKeyStatus');
+          if (message.hasApiKey) {
+            apiKeyStatus.className = 'api-key-status set';
+            apiKeyStatus.innerHTML = '<span>✅</span> 已设置';
+            apiKeyInput.placeholder = '输入新的 API 密钥（留空保持不变）...';
+          } else {
+            apiKeyStatus.className = 'api-key-status not-set';
+            apiKeyStatus.innerHTML = '<span>⚠️</span> 未设置';
+            apiKeyInput.placeholder = '输入 API 密钥...';
+          }
         }
       });
 

@@ -247,6 +247,10 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.executeCommand('vscode-agent.setApiKey');
         break;
 
+      case 'get_current_settings':
+        await handleGetCurrentSettings(context);
+        break;
+
       case 'save_settings':
         await handleSaveSettings(message.provider, message.apiKey, message.model, context);
         break;
@@ -493,6 +497,31 @@ async function restoreConversation(
 }
 
 /**
+ * 处理获取当前设置
+ */
+async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promise<void> {
+  try {
+    const config = vscode.workspace.getConfiguration('vscode-agent');
+    const provider = config.get<string>('llm.provider') || 'gemini';
+    const model = config.get<string>('llm.model') || 'gemini-2.0-flash';
+    
+    // 检查 API 密钥是否存在
+    const apiKey = await context.secrets.get(`${provider}-api-key`);
+    const hasApiKey = !!apiKey;
+    
+    // 发送当前设置到 webview
+    chatPanelProvider?.postMessage({
+      type: 'current_settings',
+      provider,
+      model,
+      hasApiKey,
+    });
+  } catch (error) {
+    console.error('[Extension] 获取当前设置失败:', error);
+  }
+}
+
+/**
  * 处理保存设置
  */
 async function handleSaveSettings(
@@ -502,8 +531,10 @@ async function handleSaveSettings(
   context: vscode.ExtensionContext
 ): Promise<void> {
   try {
-    // 保存 API 密钥
-    await context.secrets.store(`${provider}-api-key`, apiKey);
+    // 只有在提供了新的 API 密钥时才保存
+    if (apiKey) {
+      await context.secrets.store(`${provider}-api-key`, apiKey);
+    }
     
     // 更新配置
     const config = vscode.workspace.getConfiguration('vscode-agent');
