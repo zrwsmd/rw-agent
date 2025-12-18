@@ -501,7 +501,7 @@ export class SkillsManager {
     }
 
     let prompt = '\n\n## 🎯 重要：请使用以下 Skills 完成任务\n\n';
-    prompt += '**注意：当有匹配的 Skill 时，你必须优先使用 Skill 提供的脚本，而不是自己尝试实现功能。**\n\n';
+    prompt += '**注意：你必须严格按照匹配的 Skill 的角色和指导来回复用户。**\n\n';
     
     for (const skill of matchedSkills) {
       // 移除 frontmatter
@@ -515,6 +515,11 @@ export class SkillsManager {
           prompt += `- 脚本名: \`${name}\` (文件: ${path.basename(scriptPath)})\n`;
           prompt += `  使用方式: 调用 skill_script 工具，参数 skillName="${skill.name}", scriptName="${name}"\n`;
         }
+      } else {
+        // 没有脚本的 skill，提供指导
+        prompt += '\n**💡 角色扮演指导:**\n';
+        prompt += `这是一个知识型 Skill，请立即扮演 "${skill.config.name || skill.name}" 的角色，按照上述描述的专业领域和关注点来回复用户。\n`;
+        prompt += `不要询问用户提供更多信息，而是主动提供专业建议或询问具体需求。\n`;
       }
 
       // 列出资源文件
@@ -528,10 +533,24 @@ export class SkillsManager {
       prompt += '\n';
     }
     
-    prompt += '---\n**执行步骤建议:**\n';
-    prompt += '1. 阅读上面的 Skill 说明了解功能\n';
-    prompt += '2. 使用 skill_script 工具执行脚本\n';
-    prompt += '3. 根据脚本输出向用户报告结果\n\n';
+    prompt += '---\n**执行规则:**\n';
+    
+    // 检查是否有任何 skill 包含脚本
+    const hasScripts = matchedSkills.some(skill => skill.scripts.size > 0);
+    const hasKnowledgeSkills = matchedSkills.some(skill => skill.scripts.size === 0);
+    
+    if (hasScripts && hasKnowledgeSkills) {
+      prompt += '1. 对于有脚本的 Skill：必须使用 skill_script 工具执行脚本\n';
+      prompt += '2. 对于知识型 Skill：立即扮演该角色，按照专业领域提供帮助\n';
+      prompt += '3. 不要让用户等待，主动提供专业建议或具体操作\n\n';
+    } else if (hasScripts) {
+      prompt += '1. 必须使用 skill_script 工具执行脚本\n';
+      prompt += '2. 根据脚本输出向用户报告结果\n\n';
+    } else {
+      prompt += '1. 立即扮演 Skill 定义的专业角色\n';
+      prompt += '2. 按照 Skill 描述的关注点和专业领域提供帮助\n';
+      prompt += '3. 主动提供建议，不要只是询问用户提供信息\n\n';
+    }
 
     return prompt;
   }

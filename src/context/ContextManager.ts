@@ -109,6 +109,16 @@ export class ContextManagerImpl implements IContextManager {
   }
 
   /**
+   * 移除最后一条消息（用于取消操作时清理上下文）
+   */
+  removeLastMessage(): Message | null {
+    if (this.messages.length > 0) {
+      return this.messages.pop() || null;
+    }
+    return null;
+  }
+
+  /**
    * 估算当前上下文的 token 数
    */
   estimateCurrentTokens(): number {

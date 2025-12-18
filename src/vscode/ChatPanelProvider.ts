@@ -882,8 +882,25 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       cancelBtn.onclick = function() {
         vscode.postMessage({ type: 'cancel' });
         setProcessing(false);
+        
+        // 移除最后一条用户消息（被取消的请求）
+        removeLastUserMessage();
+        
         addMessage('error', '⏹ 已停止生成');
       };
+
+      // 移除最后一条用户消息的函数
+      function removeLastUserMessage() {
+        var messages = messagesEl.children;
+        for (var i = messages.length - 1; i >= 0; i--) {
+          var msg = messages[i];
+          if (msg.classList && msg.classList.contains('message') && msg.classList.contains('user')) {
+            console.log('[UI] 移除被取消的用户消息:', msg.textContent.substring(0, 50));
+            msg.remove();
+            break;
+          }
+        }
+      }
 
       function formatText(text) {
         if (!text) return '';

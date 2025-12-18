@@ -34,4 +34,5 @@ export interface ContextManager {
   getContext(maxTokens: number): LLMMessage[];
   clear(): void;
   getHistory(): Message[];
+  removeLastMessage(): Message | null;
 }

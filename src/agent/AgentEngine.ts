@@ -115,6 +115,16 @@ export class AgentEngineImpl implements IAgentEngine {
    * 判断是否需要使用工具
    */
   private needsToolUsage(message: string): boolean {
+    // 首先检查是否有匹配的 Skills
+    if (this.skillsManager) {
+      const matchedSkills = this.skillsManager.matchSkills(message);
+      if (matchedSkills.length > 0) {
+        console.log('[AgentEngine] 检测到匹配的 Skills，启用工具模式:', matchedSkills.map(s => s.name));
+        return true;
+      }
+    }
+    
+    // 然后检查传统的工具关键词
     const toolKeywords = [
       '文件', '读取', '写入', '创建', '修改', '删除',
       '搜索', '查找', '查看', '打开', '保存',
@@ -360,6 +370,24 @@ export class AgentEngineImpl implements IAgentEngine {
     this.planExecutor.cancel();
     this.functionCallingExecutor.cancel();
     this.state = { status: 'idle' };
+    
+    // 清理最后一条用户消息（被取消的请求）
+    this.removeLastUserMessage();
+  }
+
+  /**
+   * 移除最后一条用户消息（用于取消操作时清理上下文）
+   */
+  private removeLastUserMessage(): void {
+    const messages = this.contextManager.getHistory();
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'user') {
+        // 移除最后一条用户消息
+        this.contextManager.removeLastMessage();
+        console.log('[AgentEngine] 已清理被取消的用户消息:', lastMessage.content.substring(0, 50));
+      }
+    }
   }
 
   getState(): AgentState {
