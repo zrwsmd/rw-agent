@@ -38,6 +38,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private _messageHandler?: (message: UIMessage) => void;
+   private _disposables: vscode.Disposable[] = [];
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
@@ -58,12 +59,32 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    // 处理来自 webview 的消息
-    webviewView.webview.onDidReceiveMessage((message: UIMessage) => {
-      if (this._messageHandler) {
-        this._messageHandler(message);
+    // ✅ Store disposable for cleanup
+    const messageDisposable = webviewView.webview.onDidReceiveMessage(
+      (message: UIMessage) => {
+        if (this._messageHandler) {
+          this._messageHandler(message);
+        }
       }
+    );
+    this._disposables.push(messageDisposable);
+
+    // ✅ Cleanup when view is disposed
+    webviewView.onDidDispose(() => {
+      this.dispose();
     });
+  }
+
+  /**
+   * ✅ NEW: Proper cleanup
+   */
+  public dispose(): void {
+    // Dispose all event listeners
+    for (const disposable of this._disposables) {
+      disposable.dispose();
+    }
+    this._disposables = [];
+    this._view = undefined;
   }
 
   /**
@@ -802,7 +823,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     </select>
     <div class="toolbar-spacer"></div>
     <button class="toolbar-btn" id="newChatBtn" title="New Chat">➕</button>
-    <button class="toolbar-btn" id="historyBtn" title="History">�</button>
+    <button class="toolbar-btn" id="historyBtn" title="History"></button>
     <button class="toolbar-btn" id="settingsBtn" title="Settings">⚙️</button>
   </div>
 
