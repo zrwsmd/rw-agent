@@ -1,14 +1,14 @@
+// src/tools/ToolRegistry.ts
+
 import { Tool, ToolRegistry as IToolRegistry } from '../types/tool';
+import { ToolDefinition, ParameterSchema } from '../types/llm';
 
 /**
- * 工具注册表实现
+ * 工具注册表实现（增强版）
  */
 export class ToolRegistryImpl implements IToolRegistry {
   private tools: Map<string, Tool> = new Map();
 
-  /**
-   * 注册工具
-   */
   register(tool: Tool): void {
     if (this.tools.has(tool.name)) {
       throw new Error(`工具 "${tool.name}" 已存在`);
@@ -16,23 +16,14 @@ export class ToolRegistryImpl implements IToolRegistry {
     this.tools.set(tool.name, tool);
   }
 
-  /**
-   * 按名称获取工具
-   */
   get(name: string): Tool | undefined {
     return this.tools.get(name);
   }
 
-  /**
-   * 获取所有工具
-   */
   list(): Tool[] {
     return Array.from(this.tools.values());
   }
 
-  /**
-   * 生成工具描述（用于 LLM 提示）
-   */
   getToolDescriptions(): string {
     const tools = this.list();
     if (tools.length === 0) {
@@ -54,30 +45,64 @@ export class ToolRegistryImpl implements IToolRegistry {
   }
 
   /**
-   * 检查工具是否存在
+   * 转换为 OpenAI/Anthropic 工具定义格式
    */
+  getToolDefinitions(): ToolDefinition[] {
+    return this.list().map((tool) => this.convertToToolDefinition(tool));
+  }
+
+  /**
+   * 转换单个工具为标准定义
+   */
+  private convertToToolDefinition(tool: Tool): ToolDefinition {
+    const properties: Record<string, ParameterSchema> = {};
+    const required: string[] = [];
+
+    for (const param of tool.parameters) {
+      const schema: ParameterSchema = {
+        type: param.type,
+        description: param.description,
+      };
+
+      // Gemini 要求 array 类型必须有 items 字段
+      if (param.type === 'array') {
+        schema.items = { type: 'string', description: 'Array item' };
+      }
+
+      properties[param.name] = schema;
+
+      if (param.required) {
+        required.push(param.name);
+      }
+    }
+
+    return {
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: {
+          type: 'object',
+          properties,
+          required,
+        },
+      },
+    };
+  }
+
   has(name: string): boolean {
     return this.tools.has(name);
   }
 
-  /**
-   * 移除工具
-   */
   unregister(name: string): boolean {
     return this.tools.delete(name);
   }
 
-  /**
-   * 清空所有工具
-   */
   clear(): void {
     this.tools.clear();
   }
 }
 
-/**
- * 创建工具注册表实例
- */
 export function createToolRegistry(): ToolRegistryImpl {
   return new ToolRegistryImpl();
 }

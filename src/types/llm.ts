@@ -1,9 +1,51 @@
+// src/types/llm.ts
+
 /**
  * LLM 消息
  */
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string; // For tool response messages
+}
+
+/**
+ * 工具调用
+ */
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string; // JSON string
+  };
+}
+
+/**
+ * 工具定义（OpenAI/Anthropic 格式）
+ */
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      properties: Record<string, ParameterSchema>;
+      required: string[];
+    };
+  };
+}
+
+/**
+ * 参数 Schema
+ */
+export interface ParameterSchema {
+  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+  description: string;
+  enum?: string[];
+  items?: ParameterSchema;
 }
 
 /**
@@ -13,6 +55,17 @@ export interface LLMOptions {
   temperature?: number;
   maxTokens?: number;
   stopSequences?: string[];
+  tools?: ToolDefinition[]; // Native tool definitions
+  toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
+}
+
+/**
+ * LLM 响应
+ */
+export interface LLMResponse {
+  content: string;
+  toolCalls?: ToolCall[];
+  finishReason: 'stop' | 'tool_calls' | 'length' | 'content_filter';
 }
 
 /**
@@ -23,6 +76,7 @@ export interface LLMConfig {
   apiKey: string;
   model: string;
   baseUrl?: string;
+  supportsNativeTools?: boolean; // Flag for capability
 }
 
 /**
@@ -31,6 +85,19 @@ export interface LLMConfig {
 export interface LLMAdapter {
   streamComplete(messages: LLMMessage[], options?: LLMOptions): AsyncIterable<string>;
   complete(messages: LLMMessage[], options?: LLMOptions): Promise<string>;
+  
+  // New methods for function calling
+  completeWithTools(
+    messages: LLMMessage[],
+    options?: LLMOptions
+  ): Promise<LLMResponse>;
+  
+  streamCompleteWithTools(
+    messages: LLMMessage[],
+    options?: LLMOptions
+  ): AsyncIterable<{ type: 'content' | 'tool_call'; data: string | ToolCall }>;
+  
+  supportsNativeTools(): boolean;
   estimateTokens(text: string): number;
 }
 

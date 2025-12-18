@@ -1,3 +1,5 @@
+// src/agent/AgentEngine.ts (Updated)
+
 import {
   AgentEngine as IAgentEngine,
   AgentEvent,
@@ -9,6 +11,7 @@ import { ToolRegistry } from '../types/tool';
 import { ContextManagerImpl } from '../context/ContextManager';
 import { ReActExecutor } from './ReActExecutor';
 import { PlanExecutor } from './PlanExecutor';
+import { FunctionCallingExecutor } from './FunctionCallingExecutor';
 import { Plan } from '../types/plan';
 import { SkillsManager } from '../skills';
 
@@ -21,6 +24,7 @@ export class AgentEngineImpl implements IAgentEngine {
   private llmAdapter: LLMAdapter;
   private reactExecutor: ReActExecutor;
   private planExecutor: PlanExecutor;
+  private functionCallingExecutor: FunctionCallingExecutor;
   private skillsManager: SkillsManager | null = null;
 
   private state: AgentState = { status: 'idle' };
@@ -37,15 +41,13 @@ export class AgentEngineImpl implements IAgentEngine {
     this.llmAdapter = llmAdapter;
     this.reactExecutor = new ReActExecutor();
     this.planExecutor = new PlanExecutor();
+    this.functionCallingExecutor = new FunctionCallingExecutor();
     
     if (workspaceRoot) {
       this.skillsManager = new SkillsManager(workspaceRoot);
     }
   }
 
-  /**
-   * 获取 Skills 管理器
-   */
   getSkillsManager(): SkillsManager | null {
     return this.skillsManager;
   }
@@ -71,7 +73,14 @@ export class AgentEngineImpl implements IAgentEngine {
       // 检查是否需要使用工具
       const needsTools = this.needsToolUsage(message);
       if (needsTools) {
-        yield* this.executeReAct(message, context);
+        // 如果 LLM 支持原生函数调用，优先使用
+        if (this.llmAdapter.supportsNativeTools()) {
+          console.log('[AgentEngine] 使用原生函数调用模式');
+          yield* this.executeFunctionCalling(message, context);
+        } else {
+          console.log('[AgentEngine] 使用 ReAct 模式（LLM 不支持原生函数调用）');
+          yield* this.executeReAct(message, context);
+        }
       } else {
         yield* this.executeSimpleChat(context);
       }
@@ -90,7 +99,7 @@ export class AgentEngineImpl implements IAgentEngine {
       '执行', '运行', '命令', '终端', 'shell',
       'file', 'read', 'write', 'create', 'search', 'find',
       'grep', 'execute', 'run', 'command',
-      '代码', '项目', '目录', '文件夹'
+      '代码', '项目', '目录', '文件夹', 'convert', '转换'
     ];
     
     const lowerMessage = message.toLowerCase();
@@ -110,19 +119,15 @@ export class AgentEngineImpl implements IAgentEngine {
     try {
       let fullResponse = '';
       
-      // 添加系统提示和 Skills
       let systemPrompt = '你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。';
       
-      // 注入匹配的 Skills - 使用最新的用户消息
       if (this.skillsManager) {
-        // 找到最后一条 user 消息（最新的）
         const userMessages = context.filter(m => m.role === 'user');
         const latestUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
         const matchedSkills = this.skillsManager.matchSkills(latestUserMessage);
         if (matchedSkills.length > 0) {
           const skillsPrompt = this.skillsManager.generateSkillsPrompt(latestUserMessage);
           systemPrompt += skillsPrompt;
-          // 发送 skill 事件通知 UI
           for (const skill of matchedSkills) {
             yield { type: 'skill', name: skill.name, description: skill.config.description };
           }
@@ -137,20 +142,13 @@ export class AgentEngineImpl implements IAgentEngine {
         ...context,
       ];
 
-      console.log('[AgentEngine] 调用 LLM streamComplete, 消息数:', messages.length);
-
       for await (const token of this.llmAdapter.streamComplete(messages)) {
-        console.log('[AgentEngine] 收到 token:', token.substring(0, 30));
         fullResponse += token;
         yield { type: 'token', content: token };
       }
 
-      console.log('[AgentEngine] 流式完成, 总长度:', fullResponse.length);
-
-      // 发送最终答案
       yield { type: 'answer', content: fullResponse };
 
-      // 添加助手响应到上下文
       this.contextManager.addMessage({
         id: this.generateId(),
         role: 'assistant',
@@ -169,7 +167,63 @@ export class AgentEngineImpl implements IAgentEngine {
   }
 
   /**
-   * 执行 ReAct 模式
+   * 执行函数调用模式（原生工具调用）
+   */
+  private async *executeFunctionCalling(
+    goal: string,
+    context: { role: 'system' | 'user' | 'assistant'; content: string }[]
+  ): AsyncIterable<AgentEvent> {
+    this.state = { status: 'thinking', thought: '' };
+
+    // 注入 Skills
+    let skillsPrompt = '';
+    if (this.skillsManager) {
+      const matchedSkills = this.skillsManager.matchSkills(goal);
+      if (matchedSkills.length > 0) {
+        skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
+        console.log('[AgentEngine] Skills 注入:', matchedSkills.map(s => s.name));
+        for (const skill of matchedSkills) {
+          yield { type: 'skill', name: skill.name, description: skill.config.description };
+        }
+      }
+    }
+
+    let finalAnswer = '';
+
+    for await (const event of this.functionCallingExecutor.execute(
+      goal,
+      context,
+      this.toolRegistry,
+      this.llmAdapter,
+      skillsPrompt
+    )) {
+      if (event.type === 'action') {
+        this.state = {
+          status: 'acting',
+          tool: event.tool,
+          params: event.params,
+        };
+      } else if (event.type === 'answer') {
+        finalAnswer = event.content;
+      }
+
+      yield event;
+    }
+
+    if (finalAnswer) {
+      this.contextManager.addMessage({
+        id: this.generateId(),
+        role: 'assistant',
+        content: finalAnswer,
+        timestamp: Date.now(),
+      });
+    }
+
+    this.state = { status: 'idle' };
+  }
+
+  /**
+   * 执行 ReAct 模式（文本解析方式）
    */
   private async *executeReAct(
     goal: string,
@@ -177,14 +231,12 @@ export class AgentEngineImpl implements IAgentEngine {
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '' };
 
-    // 注入 Skills 到 context
     let skillsPrompt = '';
     if (this.skillsManager) {
       const matchedSkills = this.skillsManager.matchSkills(goal);
       if (matchedSkills.length > 0) {
         skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
         console.log('[AgentEngine] Skills 注入:', matchedSkills.map(s => s.name));
-        // 发送 skill 事件通知 UI
         for (const skill of matchedSkills) {
           yield { type: 'skill', name: skill.name, description: skill.config.description };
         }
@@ -200,7 +252,6 @@ export class AgentEngineImpl implements IAgentEngine {
       this.llmAdapter,
       skillsPrompt
     )) {
-      // 更新状态
       if (event.type === 'thought') {
         this.state = { status: 'thinking', thought: event.content };
       } else if (event.type === 'action') {
@@ -216,7 +267,6 @@ export class AgentEngineImpl implements IAgentEngine {
       yield event;
     }
 
-    // 添加助手响应到上下文
     if (finalAnswer) {
       this.contextManager.addMessage({
         id: this.generateId(),
@@ -236,7 +286,6 @@ export class AgentEngineImpl implements IAgentEngine {
     goal: string,
     context: { role: 'system' | 'user' | 'assistant'; content: string }[]
   ): AsyncIterable<AgentEvent> {
-    // 创建计划
     this.state = { status: 'planning', plan: null as unknown as Plan };
 
     const plan = await this.planExecutor.createPlan(goal, context, this.llmAdapter);
@@ -245,7 +294,6 @@ export class AgentEngineImpl implements IAgentEngine {
 
     yield { type: 'plan', plan };
 
-    // 执行计划
     let finalAnswer = '';
 
     for await (const event of this.planExecutor.executePlan(
@@ -270,7 +318,6 @@ export class AgentEngineImpl implements IAgentEngine {
       yield event;
     }
 
-    // 添加助手响应到上下文
     if (finalAnswer) {
       this.contextManager.addMessage({
         id: this.generateId(),
@@ -289,41 +336,27 @@ export class AgentEngineImpl implements IAgentEngine {
   cancel(): void {
     this.reactExecutor.cancel();
     this.planExecutor.cancel();
+    this.functionCallingExecutor.cancel();
     this.state = { status: 'idle' };
   }
 
-  /**
-   * 获取当前状态
-   */
   getState(): AgentState {
     return this.state;
   }
 
-  /**
-   * 获取当前计划
-   */
   getCurrentPlan(): Plan | null {
     return this.currentPlan;
   }
 
-  /**
-   * 获取上下文管理器
-   */
   getContextManager(): ContextManagerImpl {
     return this.contextManager;
   }
 
-  /**
-   * 生成唯一 ID
-   */
   private generateId(): string {
     return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   }
 }
 
-/**
- * 创建 Agent 引擎
- */
 export function createAgentEngine(
   contextManager: ContextManagerImpl,
   toolRegistry: ToolRegistry,

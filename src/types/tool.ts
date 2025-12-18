@@ -1,3 +1,7 @@
+// src/types/tool.ts
+
+import { ToolDefinition } from './llm';
+
 /**
  * 工具参数定义
  */
@@ -35,4 +39,5 @@ export interface ToolRegistry {
   get(name: string): Tool | undefined;
   list(): Tool[];
   getToolDescriptions(): string;
+  getToolDefinitions(): ToolDefinition[]; // ADD THIS LINE
 }
