@@ -34,10 +34,12 @@
   - 需要将对话保存到文件或 VSCode 存储
   - 支持恢复之前的对话
 
-- [ ] 7. Token 计数和限制
-  - 没有统计 Token 使用量
-  - 长对话可能超出模型限制
-  - 需要实现 Token 计数和自动截断
+- [x] 7. Token 计数和限制
+  - 创建了 TokenCounter 工具类（src/utils/TokenCounter.ts）
+  - 支持不同模型的 Token 限制配置
+  - ContextManager 添加了 Token 使用统计方法
+  - AgentEngine 在处理消息前检查 Token 限制
+  - 自动截断旧消息以保持在限制内
 
 - [ ] 8. AnthropicAdapter 流式工具调用修复
   - streamCompleteWithTools 里有个 blockId 变量声明了但没使用

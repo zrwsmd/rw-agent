@@ -59,6 +59,18 @@ export class AgentEngineImpl implements IAgentEngine {
     message: string,
     mode: AgentMode
   ): AsyncIterable<AgentEvent> {
+    // 检查 Token 限制，必要时自动截断
+    if (this.contextManager.isNearTokenLimit(0.85)) {
+      const deletedCount = this.contextManager.autoTruncate(4000);
+      if (deletedCount > 0) {
+        console.log(`[AgentEngine] 自动截断了 ${deletedCount} 条旧消息以保持在 Token 限制内`);
+        yield {
+          type: 'thought',
+          content: `对话历史过长，已自动清理 ${deletedCount} 条旧消息`,
+        };
+      }
+    }
+
     // 添加用户消息到上下文
     this.contextManager.addMessage({
       id: this.generateId(),
@@ -350,6 +362,25 @@ export class AgentEngineImpl implements IAgentEngine {
 
   getContextManager(): ContextManagerImpl {
     return this.contextManager;
+  }
+
+  /**
+   * 获取 Token 使用统计
+   */
+  getTokenUsage(): {
+    current: number;
+    limit: number;
+    remaining: number;
+    percentage: number;
+  } {
+    return this.contextManager.getTokenUsage();
+  }
+
+  /**
+   * 设置当前模型（用于 Token 限制计算）
+   */
+  setModel(model: string): void {
+    this.contextManager.setModel(model);
   }
 
   private generateId(): string {

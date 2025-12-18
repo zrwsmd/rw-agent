@@ -1,14 +1,12 @@
 import { ContextManager as IContextManager, Message } from '../types/context';
 import { LLMMessage } from '../types/llm';
+import { TokenCounter } from '../utils/TokenCounter';
 
 /**
  * 简单的 token 估算：约 4 字符 = 1 token（英文），中文约 1.5 字符 = 1 token
  */
 function estimateTokens(text: string): number {
-  // 简单启发式：英文约 4 字符/token，中文约 1.5 字符/token
-  const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
-  const otherChars = text.length - chineseChars;
-  return Math.ceil(chineseChars / 1.5 + otherChars / 4);
+  return TokenCounter.estimateTokens(text);
 }
 
 /**
@@ -17,6 +15,26 @@ function estimateTokens(text: string): number {
 export class ContextManagerImpl implements IContextManager {
   private messages: Message[] = [];
   private systemPrompt: string | null = null;
+  private tokenCounter: TokenCounter;
+  private model: string = 'gpt-4o';
+
+  constructor() {
+    this.tokenCounter = new TokenCounter();
+  }
+
+  /**
+   * 设置当前使用的模型
+   */
+  setModel(model: string): void {
+    this.model = model;
+  }
+
+  /**
+   * 获取当前模型
+   */
+  getModel(): string {
+    return this.model;
+  }
 
   /**
    * 设置系统提示
@@ -102,6 +120,84 @@ export class ContextManagerImpl implements IContextManager {
       total += estimateTokens(this.formatMessageContent(msg));
     }
     return total;
+  }
+
+  /**
+   * 获取模型的 Token 限制
+   */
+  getModelTokenLimit(): number {
+    return TokenCounter.getModelLimit(this.model);
+  }
+
+  /**
+   * 检查是否接近 Token 限制
+   */
+  isNearTokenLimit(threshold = 0.9): boolean {
+    const currentTokens = this.estimateCurrentTokens();
+    return TokenCounter.isNearLimit(currentTokens, this.model, threshold);
+  }
+
+  /**
+   * 获取剩余可用 Token
+   */
+  getRemainingTokens(): number {
+    const currentTokens = this.estimateCurrentTokens();
+    return TokenCounter.getRemainingTokens(currentTokens, this.model);
+  }
+
+  /**
+   * 获取 Token 使用统计
+   */
+  getTokenUsage(): {
+    current: number;
+    limit: number;
+    remaining: number;
+    percentage: number;
+  } {
+    const current = this.estimateCurrentTokens();
+    const limit = this.getModelTokenLimit();
+    const remaining = Math.max(0, limit - current);
+    const percentage = Math.min(100, (current / limit) * 100);
+
+    return { current, limit, remaining, percentage };
+  }
+
+  /**
+   * 记录 Token 使用（用于统计）
+   */
+  recordTokenUsage(promptTokens: number, completionTokens: number): void {
+    this.tokenCounter.recordPromptTokens(promptTokens);
+    this.tokenCounter.recordCompletionTokens(completionTokens);
+  }
+
+  /**
+   * 获取会话 Token 统计
+   */
+  getSessionTokenStats(): {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    sessionDuration: number;
+  } {
+    return this.tokenCounter.getSessionUsage();
+  }
+
+  /**
+   * 自动截断旧消息以保持在 Token 限制内
+   * 返回被删除的消息数量
+   */
+  autoTruncate(reserveTokens = 4000): number {
+    const limit = this.getModelTokenLimit();
+    const targetTokens = limit - reserveTokens;
+    let deletedCount = 0;
+
+    while (this.estimateCurrentTokens() > targetTokens && this.messages.length > 1) {
+      // 保留最新的消息，删除最旧的
+      this.messages.shift();
+      deletedCount++;
+    }
+
+    return deletedCount;
   }
 
   /**
