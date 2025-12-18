@@ -3,6 +3,7 @@ import { Plan, PlanStep } from '../types/plan';
 import { LLMAdapter, LLMMessage } from '../types/llm';
 import { ToolRegistry } from '../types/tool';
 import { ReActExecutor } from './ReActExecutor';
+import { FunctionCallingExecutor } from './FunctionCallingExecutor';
 
 /**
  * Plan 执行器
@@ -10,9 +11,11 @@ import { ReActExecutor } from './ReActExecutor';
 export class PlanExecutor {
   private cancelled = false;
   private reactExecutor: ReActExecutor;
+  private functionCallingExecutor: FunctionCallingExecutor;
 
   constructor() {
     this.reactExecutor = new ReActExecutor();
+    this.functionCallingExecutor = new FunctionCallingExecutor();
   }
 
   /**
@@ -68,12 +71,17 @@ export class PlanExecutor {
       const step = plan.steps[i];
       step.status = 'running';
 
-      // 使用 ReAct 执行单个步骤
+      // 执行单个步骤 - 优先使用 Function Calling
       const stepGoal = `执行计划步骤 ${step.id}: ${step.description}\n预期结果: ${step.expectedOutcome}`;
       let stepResult = '';
       let hasError = false;
 
-      for await (const event of this.reactExecutor.execute(
+      // 根据 LLM 是否支持原生工具调用选择执行器
+      const executor = llm.supportsNativeTools()
+        ? this.functionCallingExecutor
+        : this.reactExecutor;
+
+      for await (const event of executor.execute(
         stepGoal,
         context,
         toolRegistry,
@@ -161,6 +169,7 @@ export class PlanExecutor {
   cancel(): void {
     this.cancelled = true;
     this.reactExecutor.cancel();
+    this.functionCallingExecutor.cancel();
   }
 
   /**
@@ -258,7 +267,7 @@ ${goal}`;
    * 生成唯一 ID
    */
   private generateId(): string {
-    return `plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `plan_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   }
 }
 
