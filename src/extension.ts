@@ -191,6 +191,56 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 /**
+ * 为写入和执行工具添加确认机制
+ */
+function wrapToolsWithConfirmation(toolRegistry: any): void {
+  const toolsNeedingConfirmation = ['shell_command', 'write_file', 'skill_script'];
+  
+  for (const toolName of toolsNeedingConfirmation) {
+    const originalTool = toolRegistry.get(toolName);
+    if (!originalTool) continue;
+
+    const originalExecute = originalTool.execute.bind(originalTool);
+    
+    originalTool.execute = async function(params: Record<string, unknown>) {
+      // 构建确认消息
+      let confirmMessage = '';
+      
+      if (toolName === 'shell_command') {
+        confirmMessage = `执行命令:\n\n${params.command}\n\n工作目录: ${params.cwd || '(默认)'}`;
+      } else if (toolName === 'write_file') {
+        const content = (params.content as string).substring(0, 200);
+        const contentPreview = content.length < (params.content as string).length 
+          ? content + '...' 
+          : content;
+        confirmMessage = `写入文件: ${params.path}\n\n内容预览:\n${contentPreview}`;
+      } else if (toolName === 'skill_script') {
+        const args = params.args as string[] | undefined;
+        confirmMessage = `执行脚本: ${params.skill_name}/${params.script_name}\n\n参数: ${args?.join(' ') || '(无)'}`;
+      }
+
+      // 弹出确认框
+      const choice = await vscode.window.showWarningMessage(
+        confirmMessage,
+        { modal: true },
+        '执行',
+        '取消'
+      );
+
+      if (choice !== '执行') {
+        return {
+          success: false,
+          output: '用户取消了操作',
+        };
+      }
+
+      // 执行原始工具
+      return originalExecute(params);
+    };
+  }
+}
+
+/**
  * 初始化 Agent
  */
 async function initializeAgent(context: vscode.ExtensionContext): Promise<void> {
@@ -230,6 +280,9 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   const contextManager = createContextManager();
   const skillsManager = createSkillsManager(workspaceRoot);
   const toolRegistry = createDefaultTools(workspaceRoot, skillsManager);
+  
+  // 为写入和执行工具添加确认机制
+  wrapToolsWithConfirmation(toolRegistry);
   
   // 打印加载的 skills
   const loadedSkills = skillsManager.getAllSkills();
