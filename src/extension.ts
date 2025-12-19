@@ -18,6 +18,7 @@ let chatPanelProvider: ChatPanelProvider | null = null;
 let conversationStorage: ConversationStorage | null = null;
 let currentConversation: Conversation | null = null;
 let mcpIntegration: MCPIntegration | null = null;
+let extensionContext: vscode.ExtensionContext | null = null;
 
 // 确认请求管理
 interface ConfirmRequest {
@@ -128,6 +129,9 @@ function wrapToolsWithConfirmation(toolRegistry: any): void {
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('VSCode Agent 扩展已激活');
+
+  // 存储 context 引用
+  extensionContext = context;
 
   // 获取工作区根目录
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
@@ -300,6 +304,11 @@ export function activate(context: vscode.ExtensionContext) {
 
       case 'mcp_open_config':
         await handleMCPOpenConfig();
+        break;
+
+      case 'save_input_text':
+        // 保存输入框文本到 extension state
+        context.workspaceState.update('inputText', message.text);
         break;
     }
   });
@@ -541,6 +550,8 @@ async function saveConversation(
  * 恢复当前会话（优先从内存，其次从存储）
  */
 async function restoreCurrentSession(): Promise<void> {
+  let restored = false;
+
   // 优先从 agentEngine 的 contextManager 恢复（处理切换视图的情况）
   if (agentEngine) {
     const history = agentEngine.getContextManager().getHistory();
@@ -554,44 +565,53 @@ async function restoreCurrentSession(): Promise<void> {
           toolCall: m.toolCall,
         })),
       });
-      return;
+      restored = true;
     }
   }
 
   // 如果内存中没有，尝试从存储恢复
-  if (!conversationStorage) {
-    return;
+  if (!restored && conversationStorage) {
+    try {
+      const conversation = await conversationStorage.loadCurrentConversation();
+      if (conversation && conversation.messages.length > 0) {
+        currentConversation = conversation;
+        console.log('[Extension] 从存储恢复对话，消息数:', conversation.messages.length);
+
+        // 恢复消息到 UI
+        chatPanelProvider?.postMessage({
+          type: 'conversation_loaded',
+          messages: conversation.messages.map(m => ({ 
+            role: m.role, 
+            content: m.content,
+            toolCall: m.toolCall,
+          })),
+        });
+
+        // 恢复到 context manager
+        if (agentEngine) {
+          for (const msg of conversation.messages) {
+            agentEngine.getContextManager().addMessage(msg);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Extension] 恢复对话失败:', error);
+    }
   }
 
-  try {
-    const conversation = await conversationStorage.loadCurrentConversation();
-    if (!conversation || conversation.messages.length === 0) {
-      return;
+  // 恢复输入框文本
+  if (extensionContext) {
+    const savedInputText = extensionContext.workspaceState.get<string>('inputText');
+    if (savedInputText) {
+      chatPanelProvider?.postMessage({
+        type: 'restore_input_text',
+        text: savedInputText,
+      });
     }
-
-    currentConversation = conversation;
-    console.log('[Extension] 从存储恢复对话，消息数:', conversation.messages.length);
-
-    // 恢复消息到 UI
-    chatPanelProvider?.postMessage({
-      type: 'conversation_loaded',
-      messages: conversation.messages.map(m => ({ 
-        role: m.role, 
-        content: m.content,
-        toolCall: m.toolCall,
-      })),
-    });
-
-    // 恢复到 context manager
-    if (agentEngine) {
-      for (const msg of conversation.messages) {
-        agentEngine.getContextManager().addMessage(msg);
-      }
-    }
-  } catch (error) {
-    console.error('[Extension] 恢复对话失败:', error);
   }
 }
+
+
 
 /**
  * 恢复对话（从存储）- 保留用于其他场景

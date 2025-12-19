@@ -44,7 +44,9 @@ export type UIMessage =
   | { type: 'mcp_open_config' }
   | { type: 'mcp_servers_list'; servers: any[] }
   | { type: 'mcp_marketplace_list'; servers: any[] }
-  | { type: 'mcp_server_status_changed'; status: any };
+  | { type: 'mcp_server_status_changed'; status: any }
+  | { type: 'save_input_text'; text: string }
+  | { type: 'restore_input_text'; text: string };
 
 /**
  * 聊天面板提供者
@@ -1427,6 +1429,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         addMessage('user', content);
         vscode.postMessage({ type: 'user_message', content: content });
         inputEl.value = '';
+        // 清除保存的输入文本
+        vscode.postMessage({ type: 'save_input_text', text: '' });
         setProcessing(true);
         currentAssistantMessage = null;
       }
@@ -1808,6 +1812,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
       };
 
+      // 保存输入框文本（防抖）
+      var saveInputTimeout = null;
+      inputEl.oninput = function() {
+        if (saveInputTimeout) {
+          clearTimeout(saveInputTimeout);
+        }
+        saveInputTimeout = setTimeout(function() {
+          vscode.postMessage({ type: 'save_input_text', text: inputEl.value });
+        }, 300);
+      };
+
       // 处理来自扩展的消息
       window.addEventListener('message', function(event) {
         var message = event.data;
@@ -1967,6 +1982,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         } else if (message.type === 'mcp_server_status_changed') {
           // 刷新服务器列表
           loadMCPServers();
+        } else if (message.type === 'restore_input_text') {
+          // 恢复输入框文本
+          if (message.text) {
+            inputEl.value = message.text;
+          }
         }
       });
 
