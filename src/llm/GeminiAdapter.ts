@@ -21,6 +21,7 @@ interface GeminiFunctionCallPart {
     name: string;
     args: Record<string, unknown>;
   };
+  thoughtSignature?: string;
 }
 
 interface GeminiFunctionResponsePart {
@@ -311,6 +312,7 @@ export class GeminiAdapter extends BaseLLMAdapter {
             name: part.functionCall.name,
             arguments: JSON.stringify(part.functionCall.args),
           },
+          thoughtSignature: part.thoughtSignature, // Gemini 3 requires this
         });
       }
     }
@@ -413,6 +415,7 @@ export class GeminiAdapter extends BaseLLMAdapter {
                 name: part.functionCall.name,
                 arguments: JSON.stringify(part.functionCall.args),
               },
+              thoughtSignature: part.thoughtSignature, // Gemini 3 requires this
             };
             yield { type: 'tool_call', data: toolCall };
           }
@@ -435,6 +438,7 @@ export class GeminiAdapter extends BaseLLMAdapter {
                   name: part.functionCall.name,
                   arguments: JSON.stringify(part.functionCall.args),
                 },
+                thoughtSignature: part.thoughtSignature, // Gemini 3 requires this
               };
               yield { type: 'tool_call', data: toolCall };
             }
@@ -483,12 +487,17 @@ export class GeminiAdapter extends BaseLLMAdapter {
 
       if (msg.toolCalls) {
         for (const toolCall of msg.toolCalls) {
-          parts.push({
+          const fcPart: GeminiFunctionCallPart = {
             functionCall: {
               name: toolCall.function.name,
               args: JSON.parse(toolCall.function.arguments),
             },
-          });
+          };
+          // Gemini 3 requires thoughtSignature to be passed back
+          if (toolCall.thoughtSignature) {
+            fcPart.thoughtSignature = toolCall.thoughtSignature;
+          }
+          parts.push(fcPart);
         }
       }
 

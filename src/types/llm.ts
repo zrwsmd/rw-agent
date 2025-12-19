@@ -20,6 +20,7 @@ export interface ToolCall {
     name: string;
     arguments: string; // JSON string
   };
+  thoughtSignature?: string; // Gemini 3 requires this for function calling
 }
 
 /**
