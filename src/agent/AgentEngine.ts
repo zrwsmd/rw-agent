@@ -158,6 +158,23 @@ export class AgentEngineImpl implements IAgentEngine {
       }
     }
     
+    // Check MCP tools - 如果有 MCP 工具可用，也启用工具模式
+    if (this.mcpIntegration) {
+      const mcpTools = this.mcpIntegration.getMCPTools();
+      const totalMCPTools = mcpTools.reduce((sum, s) => sum + s.tools.length, 0);
+      if (totalMCPTools > 0) {
+        console.log(`[AgentEngine] 检测到 ${totalMCPTools} 个 MCP 工具可用，启用工具模式`);
+        console.log('[AgentEngine] MCP 工具列表:');
+        for (const { serverName, tools } of mcpTools) {
+          console.log(`  服务器 ${serverName}:`);
+          for (const tool of tools) {
+            console.log(`    - ${tool.name}: ${tool.description}`);
+          }
+        }
+        return true;
+      }
+    }
+    
     // Fallback to keyword detection for non-skill tool usage
     const toolKeywords = [
       '文件', '读取', '写入', '创建', '修改', '删除',
@@ -165,7 +182,8 @@ export class AgentEngineImpl implements IAgentEngine {
       '执行', '运行', '命令', '终端', 'shell',
       'file', 'read', 'write', 'create', 'search', 'find',
       'grep', 'execute', 'run', 'command',
-      '代码', '项目', '目录', '文件夹', 'convert', '转换'
+      '代码', '项目', '目录', '文件夹', 'convert', '转换',
+      '文言文', '列表', '获取'
     ];
     
     const lowerMessage = message.toLowerCase();

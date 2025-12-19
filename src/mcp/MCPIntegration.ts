@@ -71,21 +71,49 @@ export class MCPIntegration extends EventEmitter {
     // 移除旧工具
     this.unregisterServerTools(serverName);
     
+    console.log(`[MCPIntegration] ========== MCP 服务器工具注册 ==========`);
+    console.log(`[MCPIntegration] 服务器: ${serverName}`);
+    console.log(`[MCPIntegration] 服务器提供的工具数量: ${status.tools.length}`);
+    
     // 注册新工具
     const tools: MCPTool[] = [];
     for (const mcpTool of status.tools) {
       try {
+        console.log(`[MCPIntegration] - 工具名称: ${mcpTool.name}`);
+        console.log(`[MCPIntegration]   描述: ${mcpTool.description}`);
+        console.log(`[MCPIntegration]   参数: ${JSON.stringify(mcpTool.inputSchema)}`);
+        
         const tool = createMCPTool(serverName, mcpTool, this.mcpManager);
         this.toolRegistry.register(tool);
         tools.push(tool);
-        console.log(`[MCPIntegration] 注册工具: ${tool.name}`);
+        console.log(`[MCPIntegration]   ✓ 注册成功，工具ID: ${tool.name}`);
       } catch (error) {
-        console.error(`[MCPIntegration] 注册工具 ${mcpTool.name} 失败:`, error);
+        console.error(`[MCPIntegration]   ✗ 注册工具 ${mcpTool.name} 失败:`, error);
       }
     }
     
     this.mcpTools.set(serverName, tools);
-    console.log(`[MCPIntegration] 服务器 ${serverName} 注册了 ${tools.length} 个工具`);
+    console.log(`[MCPIntegration] ========================================`);
+    
+    // 打印当前所有可用的 MCP 工具
+    this.printAllMCPTools();
+  }
+  
+  /**
+   * 打印所有可用的 MCP 工具
+   */
+  public printAllMCPTools(): void {
+    console.log(`[MCPIntegration] ========== 当前可用 MCP 工具列表 ==========`);
+    let totalTools = 0;
+    for (const [serverName, tools] of this.mcpTools.entries()) {
+      console.log(`[MCPIntegration] 服务器: ${serverName} (${tools.length} 个工具)`);
+      for (const tool of tools) {
+        console.log(`[MCPIntegration]   - ${tool.name}: ${tool.description}`);
+        totalTools++;
+      }
+    }
+    console.log(`[MCPIntegration] 总计: ${this.mcpTools.size} 个服务器, ${totalTools} 个工具`);
+    console.log(`[MCPIntegration] ============================================`);
   }
 
   /**
