@@ -14,6 +14,7 @@ import { PlanExecutor } from './PlanExecutor';
 import { FunctionCallingExecutor } from './FunctionCallingExecutor';
 import { Plan } from '../types/plan';
 import { SkillsManager, Skill } from '../skills';
+import { MCPIntegration } from '../mcp';
 
 /**
  * Agent 引擎实现 - 优化版
@@ -26,6 +27,7 @@ export class AgentEngineImpl implements IAgentEngine {
   private planExecutor: PlanExecutor;
   private functionCallingExecutor: FunctionCallingExecutor;
   private skillsManager: SkillsManager | null = null;
+  private mcpIntegration: MCPIntegration | null = null;
 
   private state: AgentState = { status: 'idle' };
   private currentPlan: Plan | null = null;
@@ -37,7 +39,8 @@ export class AgentEngineImpl implements IAgentEngine {
     contextManager: ContextManagerImpl,
     toolRegistry: ToolRegistry,
     llmAdapter: LLMAdapter,
-    workspaceRoot?: string
+    workspaceRoot?: string,
+    mcpIntegration?: MCPIntegration
   ) {
     this.contextManager = contextManager;
     this.toolRegistry = toolRegistry;
@@ -49,10 +52,16 @@ export class AgentEngineImpl implements IAgentEngine {
     if (workspaceRoot) {
       this.skillsManager = new SkillsManager(workspaceRoot);
     }
+    
+    this.mcpIntegration = mcpIntegration || null;
   }
 
   getSkillsManager(): SkillsManager | null {
     return this.skillsManager;
+  }
+
+  getMCPIntegration(): MCPIntegration | null {
+    return this.mcpIntegration;
   }
 
   /**
@@ -495,7 +504,8 @@ export function createAgentEngine(
   contextManager: ContextManagerImpl,
   toolRegistry: ToolRegistry,
   llmAdapter: LLMAdapter,
-  workspaceRoot?: string
+  workspaceRoot?: string,
+  mcpIntegration?: MCPIntegration
 ): AgentEngineImpl {
-  return new AgentEngineImpl(contextManager, toolRegistry, llmAdapter, workspaceRoot);
+  return new AgentEngineImpl(contextManager, toolRegistry, llmAdapter, workspaceRoot, mcpIntegration);
 }

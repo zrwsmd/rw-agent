@@ -32,7 +32,19 @@ export type UIMessage =
   | { type: 'conversation_list'; conversations: ConversationItem[] }
   | { type: 'conversation_loaded'; messages: Array<{ role: string; content: string }> }
   | { type: 'confirm_action'; requestId: string; title: string; description: string; details: string; options: Array<{ id: string; label: string; primary?: boolean }> }
-  | { type: 'confirm_response'; requestId: string; selectedOption: string };
+  | { type: 'confirm_response'; requestId: string; selectedOption: string }
+  | { type: 'mcp_list_servers' }
+  | { type: 'mcp_list_marketplace' }
+  | { type: 'mcp_search'; query: string }
+  | { type: 'mcp_start_server'; name: string }
+  | { type: 'mcp_stop_server'; name: string }
+  | { type: 'mcp_remove_server'; name: string }
+  | { type: 'mcp_install_server'; name: string }
+  | { type: 'mcp_add_server'; config: any }
+  | { type: 'mcp_open_config' }
+  | { type: 'mcp_servers_list'; servers: any[] }
+  | { type: 'mcp_marketplace_list'; servers: any[] }
+  | { type: 'mcp_server_status_changed'; status: any };
 
 /**
  * 聊天面板提供者
@@ -708,6 +720,150 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       color: var(--vscode-descriptionForeground);
       margin-top: 6px;
     }
+    
+    /* MCP 管理样式 */
+    .mcp-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      margin-bottom: 16px;
+    }
+    .tab-button {
+      background: none;
+      border: none;
+      padding: 8px 16px;
+      cursor: pointer;
+      color: var(--vscode-descriptionForeground);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab-button.active {
+      color: var(--vscode-foreground);
+      border-bottom-color: var(--vscode-focusBorder);
+    }
+    .tab-button:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .search-box {
+      margin-bottom: 16px;
+    }
+    .mcp-server-item {
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+      background: var(--vscode-editor-background);
+    }
+    .mcp-server-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .mcp-server-name {
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    .mcp-status-btn {
+      background: none;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .mcp-status-btn:hover {
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .mcp-server-status {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .mcp-server-status.running {
+      background: var(--vscode-testing-iconPassed);
+      color: white;
+    }
+    .mcp-server-status.stopped {
+      background: var(--vscode-descriptionForeground);
+      color: white;
+    }
+    .mcp-server-status.error {
+      background: var(--vscode-errorForeground);
+      color: white;
+    }
+    .mcp-server-description {
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .mcp-server-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .mcp-action-btn {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.15s;
+    }
+    .mcp-action-btn:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
+    }
+    .mcp-action-btn.primary {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
+    .mcp-action-btn.primary:hover {
+      background: var(--vscode-button-hoverBackground);
+    }
+    .marketplace-server-item {
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+      background: var(--vscode-editor-background);
+    }
+    .marketplace-server-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .marketplace-server-info h4 {
+      margin: 0 0 4px 0;
+      color: var(--vscode-foreground);
+      font-size: 14px;
+    }
+    .marketplace-server-tags {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .marketplace-tag {
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+    }
+    .loading-text {
+      text-align: center;
+      color: var(--vscode-descriptionForeground);
+      padding: 20px;
+    }
     .settings-footer {
       padding: 16px 20px;
       border-top: 1px solid var(--vscode-panel-border);
@@ -965,6 +1121,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     <div class="toolbar-spacer"></div>
     <button class="toolbar-btn" id="newChatBtn" title="New Chat">➕</button>
     <button class="toolbar-btn" id="historyBtn" title="History"></button>
+    <button class="toolbar-btn" id="mcpBtn" title="MCP Servers">🔌</button>
     <button class="toolbar-btn" id="settingsBtn" title="Settings">⚙️</button>
   </div>
 
@@ -1089,14 +1246,49 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     </div>
   </div>
 
+  <!-- MCP 服务器面板 -->
+  <div class="settings-overlay" id="mcpOverlay">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <div class="settings-title">🔌 MCP 服务器</div>
+        <button class="settings-close" id="mcpClose">×</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div class="settings-section-title" style="margin-bottom: 0;">已配置的服务器</div>
+            <button class="settings-btn settings-btn-secondary" id="addMcpServerBtn" style="padding: 6px 12px; font-size: 12px;">📝 编辑配置</button>
+          </div>
+          <div class="mcp-servers-list" id="mcpServersList">
+            <div class="loading-text">加载中...</div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="settings-btn settings-btn-secondary" id="mcpRefreshBtn">🔄 刷新</button>
+        <button class="settings-btn settings-btn-primary" id="mcpCloseBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script nonce="${nonce}">
     (function() {
-      var vscode = acquireVsCodeApi();
-      var messagesEl = document.getElementById('messages');
-      var inputEl = document.getElementById('input');
-      var sendBtn = document.getElementById('sendBtn');
-      var modeSelect = document.getElementById('modeSelect');
-      var settingsBtn = document.getElementById('settingsBtn');
+      try {
+        console.log('[ChatPanel] Script starting...');
+        var vscode = acquireVsCodeApi();
+        var messagesEl = document.getElementById('messages');
+        var inputEl = document.getElementById('input');
+        var sendBtn = document.getElementById('sendBtn');
+        var modeSelect = document.getElementById('modeSelect');
+        var settingsBtn = document.getElementById('settingsBtn');
+        
+        console.log('[ChatPanel] Elements found:', {
+          messagesEl: !!messagesEl,
+          inputEl: !!inputEl,
+          sendBtn: !!sendBtn,
+          modeSelect: !!modeSelect,
+          settingsBtn: !!settingsBtn
+        });
       
       var isProcessing = false;
       var currentAssistantMessage = null;
@@ -1229,7 +1421,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       }
 
       // 绑定按钮事件
-      sendBtn.onclick = function() { sendMessage(); };
+      console.log('[ChatPanel] Binding button events...');
+      if (sendBtn) {
+        sendBtn.onclick = function() { 
+          console.log('[ChatPanel] Send button clicked');
+          sendMessage(); 
+        };
+        console.log('[ChatPanel] Send button event bound');
+      } else {
+        console.error('[ChatPanel] Send button not found!');
+      }
       
       // 设置面板元素
       var settingsOverlay = document.getElementById('settingsOverlay');
@@ -1270,11 +1471,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         updateModelOptions(providerSelect.value);
       };
       
-      settingsBtn.onclick = function() {
-        // 请求当前设置
-        vscode.postMessage({ type: 'get_current_settings' });
-        settingsOverlay.classList.add('show');
-      };
+      if (settingsBtn) {
+        settingsBtn.onclick = function() {
+          console.log('[ChatPanel] Settings button clicked');
+          // 请求当前设置
+          vscode.postMessage({ type: 'get_current_settings' });
+          settingsOverlay.classList.add('show');
+        };
+        console.log('[ChatPanel] Settings button event bound');
+      } else {
+        console.error('[ChatPanel] Settings button not found!');
+      }
       
       settingsClose.onclick = function() {
         settingsOverlay.classList.remove('show');
@@ -1321,11 +1528,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       
       // 新建对话按钮
       var newChatBtn = document.getElementById('newChatBtn');
-      newChatBtn.onclick = function() {
-        messagesEl.innerHTML = '<div class="empty-state" id="emptyState"><div class="empty-state-icon">🤖</div><div class="empty-state-text">开始对话吧！</div></div>';
-        document.getElementById('tokenUsage').classList.remove('show');
-        vscode.postMessage({ type: 'new_conversation' });
-      };
+      if (newChatBtn) {
+        newChatBtn.onclick = function() {
+          console.log('[ChatPanel] New chat button clicked');
+          messagesEl.innerHTML = '<div class="empty-state" id="emptyState"><div class="empty-state-icon">🤖</div><div class="empty-state-text">开始对话吧！</div></div>';
+          document.getElementById('tokenUsage').classList.remove('show');
+          vscode.postMessage({ type: 'new_conversation' });
+        };
+        console.log('[ChatPanel] New chat button event bound');
+      } else {
+        console.error('[ChatPanel] New chat button not found!');
+      }
 
       // 历史对话按钮
       var historyBtn = document.getElementById('historyBtn');
@@ -1334,10 +1547,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       var historyClose = document.getElementById('historyClose');
       var historyList = document.getElementById('historyList');
 
-      historyBtn.onclick = function() {
-        vscode.postMessage({ type: 'list_conversations' });
-        historyOverlay.classList.add('show');
-      };
+      if (historyBtn) {
+        historyBtn.onclick = function() {
+          console.log('[ChatPanel] History button clicked');
+          vscode.postMessage({ type: 'list_conversations' });
+          historyOverlay.classList.add('show');
+        };
+        console.log('[ChatPanel] History button event bound');
+      } else {
+        console.error('[ChatPanel] History button not found!');
+      }
 
       historyClose.onclick = function() {
         historyOverlay.classList.remove('show');
@@ -1534,6 +1753,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             apiKeyStatus.innerHTML = '<span>⚠️</span> 未设置';
             apiKeyInput.placeholder = '输入 API 密钥...';
           }
+        } else if (message.type === 'mcp_servers_list') {
+          renderMCPServers(message.servers);
+        } else if (message.type === 'mcp_server_status_changed') {
+          // 刷新服务器列表
+          loadMCPServers();
         }
       });
 
@@ -1623,8 +1847,280 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
       });
 
+      // MCP 管理功能
+      var mcpServersList = document.getElementById('mcpServersList');
+      
+      // 加载MCP服务器列表
+      function loadMCPServers() {
+        vscode.postMessage({ type: 'mcp_list_servers' });
+      }
+      
+      // 渲染MCP服务器列表
+      function renderMCPServers(servers) {
+        if (!mcpServersList) return;
+        
+        if (!servers || servers.length === 0) {
+          mcpServersList.innerHTML = '<div class="loading-text">暂无配置的 MCP 服务器</div>';
+          return;
+        }
+
+        mcpServersList.innerHTML = servers.map(function(server) {
+          var statusClass = server.status === 'running' ? 'running' : 
+                           server.status === 'error' ? 'error' : 'stopped';
+          var statusText = server.status === 'running' ? '运行中' : 
+                          server.status === 'error' ? '错误' : '已停止';
+          var statusIcon = server.status === 'running' ? '🟢' : 
+                          server.status === 'error' ? '🔴' : '⚪';
+          
+          return '<div class="mcp-server-item">' +
+            '<div class="mcp-server-header">' +
+              '<div class="mcp-server-name">' + server.name + '</div>' +
+              '<div style="display: flex; gap: 8px;">' +
+                '<button class="mcp-status-btn" data-server-name="' + server.name + '" data-server-status="' + server.status + '" title="' + statusText + '">' +
+                  statusIcon +
+                '</button>' +
+                '<button class="mcp-delete-btn" data-server-name="' + server.name + '" title="删除服务器" style="background: none; border: none; color: var(--vscode-errorForeground); cursor: pointer; padding: 4px; font-size: 14px;">🗑️</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="mcp-server-description">' + (server.description || '无描述') + '</div>' +
+          '</div>';
+        }).join('');
+        
+        // 绑定点击事件
+        var statusButtons = mcpServersList.querySelectorAll('.mcp-status-btn');
+        for (var i = 0; i < statusButtons.length; i++) {
+          statusButtons[i].onclick = function() {
+            var name = this.getAttribute('data-server-name');
+            var status = this.getAttribute('data-server-status');
+            toggleMCPServer(name, status);
+          };
+        }
+        
+        // 绑定删除按钮事件
+        var deleteButtons = mcpServersList.querySelectorAll('.mcp-delete-btn');
+        for (var i = 0; i < deleteButtons.length; i++) {
+          deleteButtons[i].onclick = function() {
+            var name = this.getAttribute('data-server-name');
+            if (confirm('确定要删除服务器 "' + name + '" 吗？')) {
+              vscode.postMessage({ type: 'mcp_remove_server', name: name });
+            }
+          };
+        }
+      }
+      
+      // 切换MCP服务器状态
+      function toggleMCPServer(name, currentStatus) {
+        if (currentStatus === 'running') {
+          vscode.postMessage({ type: 'mcp_stop_server', name: name });
+        } else {
+          vscode.postMessage({ type: 'mcp_start_server', name: name });
+        }
+      }
+
+      // MCP面板管理
+      var mcpBtn = document.getElementById('mcpBtn');
+      var mcpOverlay = document.getElementById('mcpOverlay');
+      var mcpClose = document.getElementById('mcpClose');
+      var mcpCloseBtn = document.getElementById('mcpCloseBtn');
+      var mcpRefreshBtn = document.getElementById('mcpRefreshBtn');
+      var addMcpServerBtn = document.getElementById('addMcpServerBtn');
+      
+      if (mcpBtn) {
+        mcpBtn.onclick = function() {
+          console.log('[ChatPanel] MCP button clicked');
+          mcpOverlay.classList.add('show');
+          loadMCPServers();
+        };
+      }
+      
+      if (mcpClose) {
+        mcpClose.onclick = function() {
+          mcpOverlay.classList.remove('show');
+        };
+      }
+      
+      if (mcpCloseBtn) {
+        mcpCloseBtn.onclick = function() {
+          mcpOverlay.classList.remove('show');
+        };
+      }
+      
+      if (mcpRefreshBtn) {
+        mcpRefreshBtn.onclick = function() {
+          loadMCPServers();
+        };
+      }
+      
+      if (mcpOverlay) {
+        mcpOverlay.onclick = function(e) {
+          if (e.target === mcpOverlay) {
+            mcpOverlay.classList.remove('show');
+          }
+        };
+      }
+      
+      // 编辑配置按钮 - 直接打开配置文件
+      if (addMcpServerBtn) {
+        addMcpServerBtn.onclick = function() {
+          console.log('[ChatPanel] Open MCP config clicked');
+          vscode.postMessage({ type: 'mcp_open_config' });
+        };
+      }
+
+      /*
+      var mcpTabInstalled = document.getElementById('mcpTabInstalled');
+      var mcpTabMarketplace = document.getElementById('mcpTabMarketplace');
+      var mcpInstalledContent = document.getElementById('mcp-installed');
+      var mcpMarketplaceContent = document.getElementById('mcp-marketplace');
+      var mcpServersList = document.getElementById('mcpServersList');
+      var marketplaceServers = document.getElementById('marketplaceServers');
+      var mcpSearch = document.getElementById('mcpSearch');
+
+      // 先定义MCP相关函数
+      function loadInstalledServers() {
+        vscode.postMessage({ type: 'mcp_list_servers' });
+      }
+
+      function loadMarketplaceServers() {
+        vscode.postMessage({ type: 'mcp_list_marketplace' });
+      }
+
+      // 只有当MCP元素存在时才绑定事件
+      if (mcpTabInstalled && mcpTabMarketplace && mcpInstalledContent && mcpMarketplaceContent) {
+        // 标签页切换
+        mcpTabInstalled.onclick = function() {
+          mcpTabInstalled.classList.add('active');
+          mcpTabMarketplace.classList.remove('active');
+          mcpInstalledContent.classList.add('active');
+          mcpMarketplaceContent.classList.remove('active');
+          loadInstalledServers();
+        };
+
+        mcpTabMarketplace.onclick = function() {
+          mcpTabMarketplace.classList.add('active');
+          mcpTabInstalled.classList.remove('active');
+          mcpMarketplaceContent.classList.add('active');
+          mcpInstalledContent.classList.remove('active');
+          loadMarketplaceServers();
+        };
+      }
+
+      // 搜索功能
+      if (mcpSearch) {
+        mcpSearch.oninput = function() {
+          var query = mcpSearch.value.trim();
+          if (query) {
+            vscode.postMessage({ type: 'mcp_search', query: query });
+          } else {
+            loadMarketplaceServers();
+          }
+        };
+      }
+      */
+
+      // MCP 消息处理已集成到主消息处理器中
+
+      /*
+      // 渲染已安装的服务器
+      function renderInstalledServers(servers) {
+        if (!mcpServersList) return;
+        
+        if (!servers || servers.length === 0) {
+          mcpServersList.innerHTML = '<div class="loading-text">暂无已安装的 MCP 服务器</div>';
+          return;
+        }
+
+        mcpServersList.innerHTML = servers.map(function(server) {
+          var statusClass = server.status === 'running' ? 'running' : 
+                           server.status === 'error' ? 'error' : 'stopped';
+          var statusText = server.status === 'running' ? '运行中' : 
+                          server.status === 'error' ? '错误' : '已停止';
+          
+          return '<div class="mcp-server-item">' +
+            '<div class="mcp-server-header">' +
+              '<div class="mcp-server-name">' + server.name + '</div>' +
+              '<div class="mcp-server-status ' + statusClass + '">' + statusText + '</div>' +
+            '</div>' +
+            '<div class="mcp-server-description">' + (server.description || '无描述') + '</div>' +
+            '<div class="mcp-server-actions">' +
+              (server.status === 'running' ? 
+                '<button class="mcp-action-btn" onclick="stopMCPServer(\'' + server.name + '\')">停止</button>' :
+                '<button class="mcp-action-btn primary" onclick="startMCPServer(\'' + server.name + '\')">启动</button>') +
+              '<button class="mcp-action-btn" onclick="removeMCPServer(\'' + server.name + '\')">删除</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      // 渲染市场服务器
+      function renderMarketplaceServers(servers) {
+        if (!marketplaceServers) return;
+        
+        if (!servers || servers.length === 0) {
+          marketplaceServers.innerHTML = '<div class="loading-text">暂无可用的 MCP 服务器</div>';
+          return;
+        }
+
+        marketplaceServers.innerHTML = servers.map(function(server) {
+          return '<div class="marketplace-server-item">' +
+            '<div class="marketplace-server-header">' +
+              '<div class="marketplace-server-info">' +
+                '<h4>' + server.displayName + '</h4>' +
+                '<div class="mcp-server-description">' + server.description + '</div>' +
+              '</div>' +
+              '<button class="mcp-action-btn primary" onclick="installMCPServer(\'' + server.name + '\')">安装</button>' +
+            '</div>' +
+            '<div class="marketplace-server-tags">' +
+              server.tags.map(function(tag) {
+                return '<span class="marketplace-tag">' + tag + '</span>';
+              }).join('') +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      // MCP 服务器操作函数
+      window.startMCPServer = function(name) {
+        vscode.postMessage({ type: 'mcp_start_server', name: name });
+      };
+
+      window.stopMCPServer = function(name) {
+        vscode.postMessage({ type: 'mcp_stop_server', name: name });
+      };
+
+      window.removeMCPServer = function(name) {
+        if (confirm('确定要删除服务器 ' + name + ' 吗？')) {
+          vscode.postMessage({ type: 'mcp_remove_server', name: name });
+        }
+      };
+
+      window.installMCPServer = function(name) {
+        vscode.postMessage({ type: 'mcp_install_server', name: name });
+      };
+
+      // 处理 MCP 相关消息
+      window.addEventListener('message', function(event) {
+        var message = event.data;
+        
+        if (message.type === 'mcp_servers_list') {
+          renderInstalledServers(message.servers);
+        } else if (message.type === 'mcp_marketplace_list') {
+          renderMarketplaceServers(message.servers);
+        } else if (message.type === 'mcp_server_status_changed') {
+          // 刷新已安装服务器列表
+          if (mcpInstalledContent && mcpInstalledContent.classList.contains('active')) {
+            loadInstalledServers();
+          }
+        }
+      });
+      */
+
       // 通知扩展 webview 已准备好
+      console.log('[ChatPanel] Script completed, sending ready message');
       vscode.postMessage({ type: 'ready' });
+      } catch (error) {
+        console.error('[ChatPanel] Script error:', error);
+      }
     })();
   </script>
 </body>

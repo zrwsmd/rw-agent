@@ -53,3 +53,14 @@
   - 修复了 streamCompleteWithTools 中未使用的 blockId 变量
   - 完善了流式工具调用的 JSON 累积逻辑
   - 现在可以正确处理 Anthropic 流式返回的工具调用 JSON 片段
+
+- [x] 9. MCP (Model Context Protocol) 集成
+  - 创建了完整的 MCP 类型定义（src/types/mcp.ts）
+  - 实现了 MCPServerManager 用于进程管理和 JSON-RPC 通信
+  - 创建了 MCPTool 适配器将 MCP 工具包装为系统工具
+  - 实现了 MCPMarketplace 提供 8 个预配置的流行服务器
+  - 创建了 MCPIntegration 统一管理服务器和工具
+  - 在设置面板添加了 MCP 管理 UI（已安装/市场标签页）
+  - 支持启动/停止/删除/安装 MCP 服务器
+  - 自动注册/注销 MCP 工具到工具注册表
+  - 配置文件存储在 .vscode-agent/mcp-servers.json

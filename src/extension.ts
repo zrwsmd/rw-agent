@@ -9,12 +9,14 @@ import { AgentMode } from './types/agent';
 import { LLMConfig } from './types/llm';
 import { ConversationStorage, createConversationStorage } from './storage';
 import { Conversation } from './types/conversation';
+import { MCPIntegration, createMCPIntegration } from './mcp';
 
 let agentEngine: AgentEngineImpl | null = null;
 let currentMode: AgentMode = 'react';
 let chatPanelProvider: ChatPanelProvider | null = null;
 let conversationStorage: ConversationStorage | null = null;
 let currentConversation: Conversation | null = null;
+let mcpIntegration: MCPIntegration | null = null;
 
 // 确认请求管理
 interface ConfirmRequest {
@@ -254,6 +256,42 @@ export function activate(context: vscode.ExtensionContext) {
       case 'save_settings':
         await handleSaveSettings(message.provider, message.apiKey, message.model, context);
         break;
+
+      case 'mcp_list_servers':
+        await handleMCPListServers();
+        break;
+
+      case 'mcp_list_marketplace':
+        await handleMCPListMarketplace();
+        break;
+
+      case 'mcp_search':
+        await handleMCPSearch(message.query);
+        break;
+
+      case 'mcp_start_server':
+        await handleMCPStartServer(message.name);
+        break;
+
+      case 'mcp_stop_server':
+        await handleMCPStopServer(message.name);
+        break;
+
+      case 'mcp_remove_server':
+        await handleMCPRemoveServer(message.name);
+        break;
+
+      case 'mcp_install_server':
+        await handleMCPInstallServer(message.name);
+        break;
+
+      case 'mcp_add_server':
+        await handleMCPAddServer(message.config);
+        break;
+
+      case 'mcp_open_config':
+        await handleMCPOpenConfig();
+        break;
     }
   });
 
@@ -346,6 +384,27 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   const skillsManager = createSkillsManager(workspaceRoot);
   const toolRegistry = createDefaultTools(workspaceRoot, skillsManager);
   
+  // 初始化 MCP 集成
+  if (!mcpIntegration) {
+    mcpIntegration = createMCPIntegration(workspaceRoot, toolRegistry);
+    
+    // 监听服务器状态变化
+    mcpIntegration.on('serverStatus', (status) => {
+      chatPanelProvider?.postMessage({
+        type: 'mcp_server_status_changed',
+        status,
+      });
+    });
+    
+    try {
+      await mcpIntegration.initialize();
+      console.log('[Extension] MCP 集成初始化成功');
+    } catch (error) {
+      console.error('[Extension] MCP 集成初始化失败:', error);
+      // MCP 初始化失败不应该阻止整个系统启动
+    }
+  }
+  
   // 为写入和执行工具添加确认机制
   wrapToolsWithConfirmation(toolRegistry);
   
@@ -371,7 +430,7 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
 
   try {
     const llmAdapter = createLLMAdapter(llmConfig);
-    agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter, workspaceRoot);
+    agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter, workspaceRoot, mcpIntegration);
     console.log('Agent 引擎初始化成功');
     const skills = skillsManager.getAllSkills();
     console.log('Skills 已加载:', skills.length, '个');
@@ -552,9 +611,248 @@ async function handleSaveSettings(
   }
 }
 
+/**
+ * 处理 MCP 服务器列表请求
+ */
+async function handleMCPListServers(): Promise<void> {
+  if (!mcpIntegration) {
+    chatPanelProvider?.postMessage({
+      type: 'mcp_servers_list',
+      servers: [],
+    });
+    return;
+  }
+
+  try {
+    const statuses = mcpIntegration.getAllServerStatuses();
+    chatPanelProvider?.postMessage({
+      type: 'mcp_servers_list',
+      servers: statuses,
+    });
+  } catch (error) {
+    console.error('[Extension] 获取 MCP 服务器列表失败:', error);
+    chatPanelProvider?.postMessage({
+      type: 'mcp_servers_list',
+      servers: [],
+    });
+  }
+}
+
+/**
+ * 处理 MCP 市场列表请求
+ */
+async function handleMCPListMarketplace(): Promise<void> {
+  if (!mcpIntegration) {
+    chatPanelProvider?.postMessage({
+      type: 'mcp_marketplace_list',
+      servers: [],
+    });
+    return;
+  }
+
+  try {
+    const marketplaceServers = mcpIntegration.getMarketplaceServers();
+    chatPanelProvider?.postMessage({
+      type: 'mcp_marketplace_list',
+      servers: marketplaceServers,
+    });
+  } catch (error) {
+    console.error('[Extension] 获取 MCP 市场列表失败:', error);
+    chatPanelProvider?.postMessage({
+      type: 'mcp_marketplace_list',
+      servers: [],
+    });
+  }
+}
+
+/**
+ * 处理 MCP 搜索请求
+ */
+async function handleMCPSearch(query: string): Promise<void> {
+  if (!mcpIntegration) {
+    chatPanelProvider?.postMessage({
+      type: 'mcp_marketplace_list',
+      servers: [],
+    });
+    return;
+  }
+
+  try {
+    const searchResults = mcpIntegration.searchMarketplaceServers(query);
+    chatPanelProvider?.postMessage({
+      type: 'mcp_marketplace_list',
+      servers: searchResults,
+    });
+  } catch (error) {
+    console.error('[Extension] MCP 搜索失败:', error);
+    chatPanelProvider?.postMessage({
+      type: 'mcp_marketplace_list',
+      servers: [],
+    });
+  }
+}
+
+/**
+ * 处理启动 MCP 服务器请求
+ */
+async function handleMCPStartServer(name: string): Promise<void> {
+  if (!mcpIntegration) {
+    vscode.window.showErrorMessage('MCP 集成未初始化');
+    return;
+  }
+
+  try {
+    await mcpIntegration.startServer(name);
+    vscode.window.showInformationMessage(`MCP 服务器 ${name} 启动成功`);
+    
+    // 刷新服务器列表
+    await handleMCPListServers();
+  } catch (error) {
+    console.error('[Extension] 启动 MCP 服务器失败:', error);
+    vscode.window.showErrorMessage(`启动 MCP 服务器失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
+}
+
+/**
+ * 处理停止 MCP 服务器请求
+ */
+async function handleMCPStopServer(name: string): Promise<void> {
+  if (!mcpIntegration) {
+    vscode.window.showErrorMessage('MCP 集成未初始化');
+    return;
+  }
+
+  try {
+    await mcpIntegration.stopServer(name);
+    vscode.window.showInformationMessage(`MCP 服务器 ${name} 已停止`);
+    
+    // 刷新服务器列表
+    await handleMCPListServers();
+  } catch (error) {
+    console.error('[Extension] 停止 MCP 服务器失败:', error);
+    vscode.window.showErrorMessage(`停止 MCP 服务器失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
+}
+
+/**
+ * 处理删除 MCP 服务器请求
+ */
+async function handleMCPRemoveServer(name: string): Promise<void> {
+  if (!mcpIntegration) {
+    vscode.window.showErrorMessage('MCP 集成未初始化');
+    return;
+  }
+
+  try {
+    await mcpIntegration.removeServer(name);
+    vscode.window.showInformationMessage(`MCP 服务器 ${name} 已删除`);
+    
+    // 刷新服务器列表
+    await handleMCPListServers();
+  } catch (error) {
+    console.error('[Extension] 删除 MCP 服务器失败:', error);
+    vscode.window.showErrorMessage(`删除 MCP 服务器失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
+}
+
+/**
+ * 处理安装 MCP 服务器请求
+ */
+async function handleMCPInstallServer(name: string): Promise<void> {
+  if (!mcpIntegration) {
+    vscode.window.showErrorMessage('MCP 集成未初始化');
+    return;
+  }
+
+  try {
+    await mcpIntegration.installFromMarketplace(name);
+    vscode.window.showInformationMessage(`MCP 服务器 ${name} 安装成功`);
+    
+    // 刷新服务器列表
+    await handleMCPListServers();
+  } catch (error) {
+    console.error('[Extension] 安装 MCP 服务器失败:', error);
+    vscode.window.showErrorMessage(`安装 MCP 服务器失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
+}
+
+/**
+ * 处理添加自定义 MCP 服务器请求
+ */
+async function handleMCPAddServer(config: any): Promise<void> {
+  if (!mcpIntegration) {
+    vscode.window.showErrorMessage('MCP 集成未初始化');
+    return;
+  }
+
+  try {
+    await mcpIntegration.addServer(config);
+    vscode.window.showInformationMessage(`MCP 服务器 ${config.name} 添加成功`);
+    
+    // 刷新服务器列表
+    await handleMCPListServers();
+  } catch (error) {
+    console.error('[Extension] 添加 MCP 服务器失败:', error);
+    vscode.window.showErrorMessage(`添加 MCP 服务器失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
+}
+
+/**
+ * 处理打开 MCP 配置文件请求
+ */
+async function handleMCPOpenConfig(): Promise<void> {
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceRoot) {
+    vscode.window.showErrorMessage('未找到工作区');
+    return;
+  }
+
+  const fs = require('fs');
+  const path = require('path');
+  
+  const configDir = path.join(workspaceRoot, '.vscode-agent');
+  const configFilePath = path.join(configDir, 'mcp-servers.json');
+  
+  try {
+    // 确保目录存在
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    
+    // 如果配置文件不存在，创建默认配置
+    if (!fs.existsSync(configFilePath)) {
+      const defaultConfig = {
+        mcpServers: {
+          "example-server": {
+            "command": "npx",
+            "args": ["your-mcp-package"],
+            "description": "示例 MCP 服务器（请修改）",
+            "enabled": false,
+            "autoStart": false
+          }
+        }
+      };
+      fs.writeFileSync(configFilePath, JSON.stringify(defaultConfig, null, 2));
+    }
+    
+    // 打开配置文件
+    const configPath = vscode.Uri.file(configFilePath);
+    const document = await vscode.workspace.openTextDocument(configPath);
+    await vscode.window.showTextDocument(document);
+  } catch (error) {
+    console.error('[Extension] 打开 MCP 配置文件失败:', error);
+    vscode.window.showErrorMessage(`打开配置文件失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
+}
+
 export function deactivate() {
   console.log('VSCode Agent 扩展已停用');
   if (agentEngine) {
     agentEngine.cancel();
+  }
+  if (mcpIntegration) {
+    mcpIntegration.dispose().catch(error => {
+      console.error('[Extension] MCP 清理失败:', error);
+    });
   }
 }
