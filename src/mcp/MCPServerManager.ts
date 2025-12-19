@@ -147,10 +147,16 @@ export class MCPServerManager extends EventEmitter {
     const existingServer = this.servers.get(config.name);
     if (existingServer) {
       const status = existingServer.getStatus();
-      // 如果服务器状态是 stopped 或 error，先清理再重新启动
-      if (status.status === 'stopped' || status.status === 'error') {
+      // 如果服务器状态是 stopped、error 或 starting（可能是上次启动失败），先清理再重新启动
+      if (status.status === 'stopped' || status.status === 'error' || status.status === 'starting') {
+        console.log(`[MCPServerManager] 清理旧服务器实例: ${config.name}, 状态: ${status.status}`);
+        try {
+          await existingServer.stop();
+        } catch (e) {
+          // 忽略停止错误
+        }
         this.servers.delete(config.name);
-      } else {
+      } else if (status.status === 'running') {
         throw new Error(`服务器 ${config.name} 已在运行`);
       }
     }
@@ -308,13 +314,17 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
     }
 
     try {
+      console.log(`[MCP:${this.config.name}] 启动进程: ${this.config.command} ${(this.config.args || []).join(' ')}`);
+      
       this.process = spawn(this.config.command, this.config.args || [], {
         cwd: this.config.cwd,
         env: { ...process.env, ...this.config.env },
         stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true, // 在 Windows 上使用 shell 启动
       });
 
       this.status.pid = this.process.pid;
+      console.log(`[MCP:${this.config.name}] 进程已启动, PID: ${this.process.pid}`);
 
       this.process.stdout?.on('data', (data: Buffer) => {
         this.handleMessage(data.toString());
@@ -325,17 +335,23 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
       });
 
       this.process.on('error', (error: Error) => {
+        console.error(`[MCP:${this.config.name}] 进程错误:`, error);
         this.status.status = 'error';
         this.status.error = error.message;
         this.emit('status', this.status);
         this.emit('error', error);
       });
 
-      this.process.on('exit', (_code: number | null) => {
+      this.process.on('exit', (code: number | null) => {
+        console.log(`[MCP:${this.config.name}] 进程退出, code: ${code}`);
         this.status.status = 'stopped';
         this.status.pid = undefined;
         this.emit('status', this.status);
       });
+
+      // 等待 Java 进程启动完成（给 JVM 一些启动时间）
+      console.log(`[MCP:${this.config.name}] 等待进程启动...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // 初始化握手
       await this.initialize();
@@ -374,6 +390,8 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
    * 初始化握手
    */
   private async initialize(): Promise<void> {
+    console.log(`[MCP:${this.config.name}] 开始初始化握手...`);
+    
     const response = await this.sendRequest('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {
@@ -387,12 +405,22 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
       },
     });
 
+    console.log(`[MCP:${this.config.name}] 初始化响应:`, JSON.stringify(response));
     this.status.serverInfo = response.serverInfo;
+
+    // 发送 initialized 通知（MCP 协议要求）
+    console.log(`[MCP:${this.config.name}] 发送 initialized 通知...`);
+    this.sendNotification('notifications/initialized', {});
+    
+    // 等待一下让服务器处理通知
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // 获取工具列表
     if (response.capabilities?.tools) {
+      console.log(`[MCP:${this.config.name}] 获取工具列表...`);
       const toolsResponse = await this.sendRequest('tools/list', {});
       this.status.tools = toolsResponse.tools || [];
+      console.log(`[MCP:${this.config.name}] 工具列表:`, this.status.tools.map((t: any) => t.name));
     }
 
     // 获取资源列表
@@ -448,8 +476,11 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
 
       this.pendingRequests.set(id, { resolve, reject });
 
+      const messageStr = JSON.stringify(message);
+      console.log(`[MCP:${this.config.name}] 发送请求:`, messageStr);
+
       if (this.process?.stdin) {
-        this.process.stdin.write(JSON.stringify(message) + '\n');
+        this.process.stdin.write(messageStr + '\n');
       } else {
         reject(new Error('服务器进程未运行'));
       }
@@ -458,6 +489,7 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
       setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
+          console.error(`[MCP:${this.config.name}] 请求超时: ${method}`);
           reject(new Error('请求超时'));
         }
       }, 30000);
@@ -465,28 +497,61 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
   }
 
   /**
+   * 发送通知（不需要响应）
+   */
+  private sendNotification(method: string, params: any): void {
+    const message: MCPMessage = {
+      jsonrpc: '2.0',
+      method,
+      params,
+    };
+
+    const messageStr = JSON.stringify(message);
+    console.log(`[MCP:${this.config.name}] 发送通知:`, messageStr);
+
+    if (this.process?.stdin) {
+      this.process.stdin.write(messageStr + '\n');
+    }
+  }
+
+  /**
    * 处理服务器消息
    */
   private handleMessage(data: string): void {
+    console.log(`[MCP:${this.config.name}] 收到原始数据:`, data.substring(0, 500));
+    
     const lines = data.trim().split('\n');
     for (const line of lines) {
-      if (!line.trim()) continue;
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+      
+      // 跳过非 JSON 行（如日志输出）
+      if (!trimmedLine.startsWith('{')) {
+        console.log(`[MCP:${this.config.name}] 跳过非 JSON 行:`, trimmedLine.substring(0, 100));
+        continue;
+      }
       
       try {
-        const message: MCPMessage = JSON.parse(line);
+        console.log(`[MCP:${this.config.name}] 解析 JSON:`, trimmedLine.substring(0, 200));
+        const message: MCPMessage = JSON.parse(trimmedLine);
         
         if (message.id && this.pendingRequests.has(message.id)) {
           const { resolve, reject } = this.pendingRequests.get(message.id)!;
           this.pendingRequests.delete(message.id);
           
           if (message.error) {
+            console.error(`[MCP:${this.config.name}] 收到错误响应:`, message.error);
             reject(new Error(message.error.message));
           } else {
+            console.log(`[MCP:${this.config.name}] 收到成功响应`);
             resolve(message.result);
           }
+        } else {
+          console.log(`[MCP:${this.config.name}] 收到通知或未匹配的消息, id:`, message.id);
         }
       } catch (error) {
-        console.error(`[MCP:${this.config.name}] 解析消息失败:`, error, 'data:', line);
+        // 解析失败，可能是不完整的 JSON 或其他格式
+        console.warn(`[MCP:${this.config.name}] 解析消息失败，跳过:`, trimmedLine.substring(0, 100));
       }
     }
   }
