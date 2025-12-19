@@ -502,25 +502,39 @@ export class SkillsManager {
 
     let prompt = '\n\n## 🎯 重要：请使用以下 Skills 完成任务\n\n';
     prompt += '**注意：你必须严格按照匹配的 Skill 的角色和指导来回复用户。**\n\n';
+    prompt += `**用户问题：** ${userMessage}\n\n`;
+    prompt += '**匹配的专业领域：**\n\n';
     
     for (const skill of matchedSkills) {
       // 移除 frontmatter
       let content = skill.content.replace(/^---\n[\s\S]*?\n---\n*/, '');
+      
+      // 对于很长的内容，可以考虑智能截取（保留前 8000 字符）
+      if (content.length > 8000) {
+        content = content.substring(0, 8000) + '\n\n[内容已截取，如需完整信息请询问具体细节]';
+      }
+      
       prompt += `### Skill: ${skill.name}\n${content}\n`;
 
       // 列出可用脚本（强调使用方式）
       if (skill.scripts.size > 0) {
-        prompt += '\n**📜 可用脚本（请使用 skill_script 工具执行）:**\n';
+        prompt += '\n**📜 可用的辅助脚本:**\n';
+        prompt += '**重要：这些是辅助工具脚本，不是用来完成用户任务的主要方法！**\n\n';
         for (const [name, scriptPath] of skill.scripts) {
           prompt += `- 脚本名: \`${name}\` (文件: ${path.basename(scriptPath)})\n`;
-          prompt += `  使用方式: 调用 skill_script 工具，参数 skillName="${skill.name}", scriptName="${name}"\n`;
         }
-      } else {
-        // 没有脚本的 skill，提供指导
-        prompt += '\n**💡 角色扮演指导:**\n';
-        prompt += `这是一个知识型 Skill，请立即扮演 "${skill.config.name || skill.name}" 的角色，按照上述描述的专业领域和关注点来回复用户。\n`;
-        prompt += `不要询问用户提供更多信息，而是主动提供专业建议或询问具体需求。\n`;
+        prompt += '\n**⚠️ 注意：**\n';
+        prompt += `- 这些脚本只是辅助工具，不要尝试调用不存在的脚本\n`;
+        prompt += `- 你应该按照 Skill 文档中的指导，直接编写代码或提供解决方案\n`;
+        prompt += `- 只有在文档明确说明需要使用某个脚本时，才使用 skill_script 工具\n`;
+        prompt += `- 如果需要执行脚本，使用: skill_script 工具，参数 skillName="${skill.name}", scriptName="<上面列出的脚本名>"\n`;
       }
+      
+      // 无论是否有脚本，都提供角色扮演指导
+      prompt += '\n**💡 你的角色:**\n';
+      prompt += `你是 "${skill.config.name || skill.name}" 领域的专家。\n`;
+      prompt += `请按照上述 Skill 文档中的指导、最佳实践和示例来帮助用户。\n`;
+      prompt += `直接提供代码、解决方案或专业建议，不要编造不存在的工具或脚本。\n`;
 
       // 列出资源文件
       if (skill.resources.length > 0) {
@@ -533,24 +547,26 @@ export class SkillsManager {
       prompt += '\n';
     }
     
-    prompt += '---\n**执行规则:**\n';
+    prompt += '---\n**🚨 关键执行规则（必须遵守）:**\n\n';
     
-    // 检查是否有任何 skill 包含脚本
-    const hasScripts = matchedSkills.some(skill => skill.scripts.size > 0);
-    const hasKnowledgeSkills = matchedSkills.some(skill => skill.scripts.size === 0);
+    prompt += '1. **不要编造或猜测脚本名称**\n';
+    prompt += '   - 只使用上面明确列出的脚本\n';
+    prompt += '   - 如果没有列出脚本，说明这是知识型 Skill，应该直接提供解决方案\n\n';
     
-    if (hasScripts && hasKnowledgeSkills) {
-      prompt += '1. 对于有脚本的 Skill：必须使用 skill_script 工具执行脚本\n';
-      prompt += '2. 对于知识型 Skill：立即扮演该角色，按照专业领域提供帮助\n';
-      prompt += '3. 不要让用户等待，主动提供专业建议或具体操作\n\n';
-    } else if (hasScripts) {
-      prompt += '1. 必须使用 skill_script 工具执行脚本\n';
-      prompt += '2. 根据脚本输出向用户报告结果\n\n';
-    } else {
-      prompt += '1. 立即扮演 Skill 定义的专业角色\n';
-      prompt += '2. 按照 Skill 描述的关注点和专业领域提供帮助\n';
-      prompt += '3. 主动提供建议，不要只是询问用户提供信息\n\n';
-    }
+    prompt += '2. **主要工作方式**\n';
+    prompt += '   - 按照 Skill 文档中的指导和示例直接编写代码\n';
+    prompt += '   - 提供完整的、可执行的解决方案\n';
+    prompt += '   - 使用文档中推荐的库和方法\n\n';
+    
+    prompt += '3. **何时使用脚本**\n';
+    prompt += '   - 只有当 Skill 文档明确说明需要使用某个脚本时\n';
+    prompt += '   - 并且该脚本在上面的"可用脚本"列表中\n';
+    prompt += '   - 才使用 skill_script 工具执行\n\n';
+    
+    prompt += '4. **立即行动**\n';
+    prompt += '   - 不要询问用户提供更多信息\n';
+    prompt += '   - 直接按照 Skill 指导提供解决方案\n';
+    prompt += '   - 主动提供代码示例和最佳实践\n\n';
 
     return prompt;
   }
