@@ -212,7 +212,11 @@ export function activate(context: vscode.ExtensionContext) {
             // 发送消息到 UI
             chatPanelProvider?.postMessage({
               type: 'conversation_loaded',
-              messages: conv.messages.map(m => ({ role: m.role, content: m.content })),
+              messages: conv.messages.map(m => ({ 
+                role: m.role, 
+                content: m.content,
+                toolCall: m.toolCall,
+              })),
             });
           }
         }
@@ -551,7 +555,11 @@ async function restoreConversation(
     // 恢复消息到 UI
     chatPanelProvider?.postMessage({
       type: 'conversation_loaded',
-      messages: conversation.messages.map(m => ({ role: m.role, content: m.content })),
+      messages: conversation.messages.map(m => ({ 
+        role: m.role, 
+        content: m.content,
+        toolCall: m.toolCall,
+      })),
     });
 
     // 恢复到 context manager

@@ -30,7 +30,7 @@ export type UIMessage =
   | { type: 'delete_conversation'; id: string }
   | { type: 'list_conversations' }
   | { type: 'conversation_list'; conversations: ConversationItem[] }
-  | { type: 'conversation_loaded'; messages: Array<{ role: string; content: string }> }
+  | { type: 'conversation_loaded'; messages: Array<{ role: string; content: string; toolCall?: { name: string; parameters: Record<string, unknown>; result: unknown } }> }
   | { type: 'confirm_action'; requestId: string; title: string; description: string; details: string; options: Array<{ id: string; label: string; primary?: boolean }> }
   | { type: 'confirm_response'; requestId: string; selectedOption: string }
   | { type: 'mcp_list_servers' }
@@ -376,49 +376,85 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       margin-top: 2px;
     }
     
-    /* 工具调用提示 */
+    /* 工具调用提示 - 折叠样式 */
     .message.action {
-      background: linear-gradient(135deg, rgba(100, 150, 255, 0.15), rgba(100, 150, 255, 0.05));
-      border-left: 3px solid var(--vscode-terminal-ansiBlue);
-      font-size: 12px;
-      padding: 10px 14px;
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
+      background: transparent;
+      border: none;
+      padding: 4px 0;
     }
-    .action-icon {
-      font-size: 16px;
-    }
-    .action-info {
-      flex: 1;
+    .tool-call-details {
+      width: 100%;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px;
       overflow: hidden;
+      background: var(--vscode-editor-background);
     }
-    .action-name {
-      font-weight: 600;
-      color: var(--vscode-terminal-ansiBlue);
-    }
-    .action-params {
-      margin-top: 6px;
-      font-size: 11px;
-    }
-    .action-params summary {
+    .tool-call-summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
       cursor: pointer;
-      color: var(--vscode-descriptionForeground);
       user-select: none;
+      list-style: none;
+      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid transparent;
+      transition: background 0.15s;
     }
-    .action-params summary:hover {
+    .tool-call-summary::-webkit-details-marker {
+      display: none;
+    }
+    .tool-call-summary:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .tool-call-details[open] .tool-call-summary {
+      border-bottom-color: var(--vscode-panel-border);
+    }
+    .tool-call-icon {
+      font-size: 14px;
+      opacity: 0.8;
+    }
+    .tool-call-name {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
       color: var(--vscode-foreground);
     }
-    .action-params pre {
-      margin: 6px 0 0 0;
-      padding: 8px;
-      background: var(--vscode-editor-background);
-      border-radius: 4px;
-      overflow-x: auto;
+    .tool-call-arrow {
+      font-size: 10px;
+      color: var(--vscode-descriptionForeground);
+      transition: transform 0.2s;
+    }
+    .tool-call-details[open] .tool-call-arrow {
+      transform: rotate(180deg);
+    }
+    .tool-call-content {
+      padding: 12px 14px;
+    }
+    .tool-call-section {
+      margin-bottom: 12px;
+    }
+    .tool-call-section:last-child {
+      margin-bottom: 0;
+    }
+    .tool-call-label {
       font-size: 11px;
-      line-height: 1.4;
-      max-height: 200px;
+      font-weight: 600;
+      color: var(--vscode-descriptionForeground);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .tool-call-params {
+      margin: 0;
+      padding: 10px 12px;
+      background: var(--vscode-textCodeBlock-background);
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      max-height: 300px;
       overflow-y: auto;
+      color: var(--vscode-foreground);
     }
     
     /* 输入区域 */
@@ -1495,6 +1531,54 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         return div;
       }
 
+      // 添加工具调用消息（折叠样式）
+      function addToolCallMessage(toolName, params, result) {
+        var empty = document.getElementById('emptyState');
+        if (empty) empty.remove();
+        
+        var paramsStr = '';
+        try {
+          paramsStr = JSON.stringify(params, null, 2);
+        } catch (e) {
+          paramsStr = String(params);
+        }
+        
+        // 解析工具名称，判断是否是 MCP 工具
+        var isMCP = toolName.includes('_') && toolName.split('_').length >= 2;
+        var displayName = toolName;
+        var serverName = '';
+        var actualToolName = toolName;
+        
+        if (isMCP) {
+          var parts = toolName.split('_');
+          serverName = parts[0];
+          actualToolName = parts.slice(1).join('_');
+          displayName = serverName + '/' + actualToolName;
+        }
+        
+        var icon = '🔧';
+        
+        var actionDiv = document.createElement('div');
+        actionDiv.className = 'message action';
+        actionDiv.innerHTML = 
+          '<details class="tool-call-details">' +
+            '<summary class="tool-call-summary">' +
+              '<span class="tool-call-icon">' + icon + '</span>' +
+              '<span class="tool-call-name">' + displayName + '</span>' +
+              '<span class="tool-call-arrow">▼</span>' +
+            '</summary>' +
+            '<div class="tool-call-content">' +
+              '<div class="tool-call-section">' +
+                '<div class="tool-call-label">Arguments</div>' +
+                '<pre class="tool-call-params">' + paramsStr + '</pre>' +
+              '</div>' +
+            '</div>' +
+          '</details>';
+        messagesEl.appendChild(actionDiv);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return actionDiv;
+      }
+
       // 绑定按钮事件
       console.log('[ChatPanel] Binding button events...');
       if (sendBtn) {
@@ -1787,12 +1871,36 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               paramsStr = String(params);
             }
             
-            // 判断是否是 MCP 工具
+            // 解析工具名称，判断是否是 MCP 工具
             var isMCP = toolName.includes('_') && toolName.split('_').length >= 2;
-            var icon = isMCP ? '🔌' : '🔧';
-            var label = isMCP ? 'MCP 工具' : '工具';
+            var displayName = toolName;
+            var serverName = '';
+            var actualToolName = toolName;
             
-            actionDiv.innerHTML = '<span class="action-icon">' + icon + '</span><div class="action-info"><div class="action-name">' + label + ': ' + toolName + '</div><details class="action-params"><summary>参数</summary><pre>' + paramsStr + '</pre></details></div>';
+            if (isMCP) {
+              // MCP 工具格式: serverName_toolName
+              var parts = toolName.split('_');
+              serverName = parts[0];
+              actualToolName = parts.slice(1).join('_');
+              displayName = serverName + '/' + actualToolName;
+            }
+            
+            var icon = isMCP ? '🔧' : '🔧';
+            
+            actionDiv.innerHTML = 
+              '<details class="tool-call-details">' +
+                '<summary class="tool-call-summary">' +
+                  '<span class="tool-call-icon">' + icon + '</span>' +
+                  '<span class="tool-call-name">' + displayName + '</span>' +
+                  '<span class="tool-call-arrow">▼</span>' +
+                '</summary>' +
+                '<div class="tool-call-content">' +
+                  '<div class="tool-call-section">' +
+                    '<div class="tool-call-label">Arguments</div>' +
+                    '<pre class="tool-call-params">' + paramsStr + '</pre>' +
+                  '</div>' +
+                '</div>' +
+              '</details>';
             messagesEl.appendChild(actionDiv);
             messagesEl.scrollTop = messagesEl.scrollHeight;
           } else if (evt.type === 'token_usage') {
@@ -1830,7 +1938,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           messagesEl.innerHTML = '';
           
           message.messages.forEach(function(msg) {
-            addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content, msg.content);
+            // 检查是否是工具调用消息
+            if (msg.toolCall) {
+              addToolCallMessage(msg.toolCall.name, msg.toolCall.parameters, msg.toolCall.result);
+            } else {
+              addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content, msg.content);
+            }
           });
         } else if (message.type === 'current_settings') {
           // 更新设置面板的当前值
