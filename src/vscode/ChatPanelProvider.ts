@@ -132,7 +132,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data: ${webview.cspSource};">
   <title>Agent Chat</title>
   <style>
     :root {
@@ -470,42 +470,172 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 8px;
+      padding: 10px;
+      background: var(--vscode-input-background);
+      border-radius: 10px;
+      border: 1px solid var(--vscode-input-border);
     }
     .image-preview-container:empty {
       display: none;
+      padding: 0;
+      border: none;
     }
     .image-preview-item {
       position: relative;
-      width: 60px;
-      height: 60px;
-      border-radius: 6px;
+      width: 72px;
+      height: 72px;
+      border-radius: 10px;
       overflow: hidden;
-      border: 1px solid var(--vscode-panel-border);
+      border: 2px solid var(--vscode-panel-border);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--vscode-editor-background);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+    .image-preview-item:hover {
+      border-color: var(--vscode-focusBorder);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     }
     .image-preview-item img {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      transition: transform 0.2s ease;
     }
-    .image-preview-remove {
+    .image-preview-item:hover img {
+      transform: scale(1.05);
+    }
+    .image-preview-actions {
       position: absolute;
-      top: 2px;
-      right: 2px;
-      width: 18px;
-      height: 18px;
-      background: rgba(0, 0, 0, 0.6);
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .image-preview-item:hover .image-preview-actions {
+      opacity: 1;
+    }
+    .image-preview-btn {
+      width: 28px;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .image-preview-btn:hover {
+      background: white;
+      transform: scale(1.1);
+    }
+    .image-preview-btn.remove:hover {
+      background: var(--vscode-errorForeground);
+      color: white;
+    }
+    .image-preview-btn.copied {
+      background: var(--vscode-terminal-ansiGreen);
+      color: white;
+    }
+    /* 图片放大弹窗 */
+    .image-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.92);
+      z-index: 500;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      gap: 20px;
+      backdrop-filter: blur(4px);
+    }
+    .image-modal.show {
+      display: flex;
+      animation: modalFadeIn 0.2s ease;
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .image-modal img {
+      max-width: 90%;
+      max-height: 75%;
+      border-radius: 12px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+      animation: imageZoomIn 0.25s ease;
+    }
+    @keyframes imageZoomIn {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .image-modal-actions {
+      display: flex;
+      gap: 12px;
+    }
+    .image-modal-btn {
+      padding: 12px 24px;
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .image-modal-btn:hover {
+      background: var(--vscode-button-hoverBackground);
+      transform: translateY(-1px);
+    }
+    .image-modal-btn.secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+    }
+    .image-modal-btn.secondary:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .image-modal-btn.copied {
+      background: var(--vscode-terminal-ansiGreen);
+    }
+    .image-modal-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 44px;
+      height: 44px;
+      background: rgba(255, 255, 255, 0.1);
       color: white;
       border: none;
       border-radius: 50%;
       cursor: pointer;
-      font-size: 12px;
-      line-height: 1;
+      font-size: 24px;
       display: flex;
       align-items: center;
       justify-content: center;
+      transition: all 0.15s ease;
     }
-    .image-preview-remove:hover {
-      background: rgba(255, 0, 0, 0.8);
+    .image-modal-close:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: scale(1.1);
     }
     .input-wrapper {
       display: flex;
@@ -1334,6 +1464,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     </div>
   </div>
 
+  <!-- 图片放大弹窗 -->
+  <div class="image-modal" id="imageModal">
+    <button class="image-modal-close" id="imageModalClose">×</button>
+    <img id="imageModalImg" src="" alt="Preview">
+    <div class="image-modal-actions">
+      <button class="image-modal-btn" id="imageModalCopy">📋 复制图片</button>
+      <button class="image-modal-btn secondary" id="imageModalCloseBtn">关闭</button>
+    </div>
+  </div>
+
   <!-- 确认对话框 -->
   <div class="confirm-overlay" id="confirmOverlay" style="display: none;">
     <div class="confirm-dialog-container">
@@ -1481,24 +1621,139 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
       }
 
+      // 图片模态框相关
+      var imageModal = document.getElementById('imageModal');
+      var imageModalImg = document.getElementById('imageModalImg');
+      var imageModalClose = document.getElementById('imageModalClose');
+      var imageModalCloseBtn = document.getElementById('imageModalCloseBtn');
+      var imageModalCopy = document.getElementById('imageModalCopy');
+      var currentImageData = null; // { mimeType, data }
+
+      function showImageModal(mimeType, base64Data) {
+        currentImageData = { mimeType: mimeType, data: base64Data };
+        imageModalImg.src = 'data:' + mimeType + ';base64,' + base64Data;
+        imageModal.classList.add('show');
+        imageModalCopy.innerHTML = '📋 复制图片';
+        imageModalCopy.classList.remove('copied');
+      }
+
+      function hideImageModal() {
+        imageModal.classList.remove('show');
+        currentImageData = null;
+      }
+
+      imageModalClose.onclick = hideImageModal;
+      imageModalCloseBtn.onclick = hideImageModal;
+      imageModal.onclick = function(e) {
+        if (e.target === imageModal) hideImageModal();
+      };
+
+      // 复制图片到剪贴板
+      async function copyImageToClipboard(mimeType, base64Data) {
+        try {
+          var byteCharacters = atob(base64Data);
+          var byteNumbers = new Array(byteCharacters.length);
+          for (var i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          var byteArray = new Uint8Array(byteNumbers);
+          var blob = new Blob([byteArray], { type: mimeType });
+          await navigator.clipboard.write([
+            new ClipboardItem({ [mimeType]: blob })
+          ]);
+          return true;
+        } catch (err) {
+          console.error('复制图片失败:', err);
+          return false;
+        }
+      }
+
+      imageModalCopy.onclick = async function() {
+        if (currentImageData) {
+          var success = await copyImageToClipboard(currentImageData.mimeType, currentImageData.data);
+          if (success) {
+            imageModalCopy.innerHTML = '✓ 已复制';
+            imageModalCopy.classList.add('copied');
+            setTimeout(function() {
+              imageModalCopy.innerHTML = '📋 复制图片';
+              imageModalCopy.classList.remove('copied');
+            }, 2000);
+          }
+        }
+      };
+
+      // ESC 关闭模态框
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && imageModal.classList.contains('show')) {
+          hideImageModal();
+        }
+      });
+
       // 添加图片到预览
       function addImagePreview(mimeType, base64Data) {
         var item = document.createElement('div');
         item.className = 'image-preview-item';
+        
         var img = document.createElement('img');
         img.src = 'data:' + mimeType + ';base64,' + base64Data;
+        
+        var actions = document.createElement('div');
+        actions.className = 'image-preview-actions';
+        
+        // 放大按钮
+        var zoomBtn = document.createElement('button');
+        zoomBtn.className = 'image-preview-btn';
+        zoomBtn.innerHTML = '🔍';
+        zoomBtn.title = '放大查看';
+        zoomBtn.onclick = function(e) {
+          e.stopPropagation();
+          showImageModal(mimeType, base64Data);
+        };
+        
+        // 复制按钮
+        var copyBtn = document.createElement('button');
+        copyBtn.className = 'image-preview-btn';
+        copyBtn.innerHTML = '📋';
+        copyBtn.title = '复制图片';
+        copyBtn.onclick = async function(e) {
+          e.stopPropagation();
+          var success = await copyImageToClipboard(mimeType, base64Data);
+          if (success) {
+            copyBtn.innerHTML = '✓';
+            copyBtn.classList.add('copied');
+            setTimeout(function() {
+              copyBtn.innerHTML = '📋';
+              copyBtn.classList.remove('copied');
+            }, 1500);
+          }
+        };
+        
+        // 删除按钮
         var removeBtn = document.createElement('button');
-        removeBtn.className = 'image-preview-remove';
+        removeBtn.className = 'image-preview-btn remove';
         removeBtn.innerHTML = '×';
-        removeBtn.onclick = function() {
+        removeBtn.title = '删除';
+        removeBtn.onclick = function(e) {
+          e.stopPropagation();
           var index = Array.from(imagePreviewContainer.children).indexOf(item);
           if (index > -1) {
             pendingImages.splice(index, 1);
           }
           item.remove();
         };
+        
+        actions.appendChild(zoomBtn);
+        actions.appendChild(copyBtn);
+        actions.appendChild(removeBtn);
+        
         item.appendChild(img);
-        item.appendChild(removeBtn);
+        item.appendChild(actions);
+        
+        // 点击图片也可以放大
+        item.onclick = function() {
+          showImageModal(mimeType, base64Data);
+        };
+        
         imagePreviewContainer.appendChild(item);
         pendingImages.push({ mimeType: mimeType, data: base64Data });
       }
@@ -1612,13 +1867,22 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           var imagesDiv = document.createElement('div');
           imagesDiv.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;';
           for (var i = 0; i < images.length; i++) {
-            var img = document.createElement('img');
-            img.src = 'data:' + images[i].mimeType + ';base64,' + images[i].data;
-            img.style.cssText = 'max-width: 200px; max-height: 150px; border-radius: 6px; cursor: pointer;';
-            img.onclick = function() {
-              window.open(this.src, '_blank');
-            };
-            imagesDiv.appendChild(img);
+            (function(imgData) {
+              var imgWrapper = document.createElement('div');
+              imgWrapper.style.cssText = 'position: relative; display: inline-block;';
+              
+              var img = document.createElement('img');
+              img.src = 'data:' + imgData.mimeType + ';base64,' + imgData.data;
+              img.style.cssText = 'max-width: 200px; max-height: 150px; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;';
+              img.onmouseover = function() { this.style.transform = 'scale(1.02)'; this.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)'; };
+              img.onmouseout = function() { this.style.transform = 'scale(1)'; this.style.boxShadow = 'none'; };
+              img.onclick = function() {
+                showImageModal(imgData.mimeType, imgData.data);
+              };
+              
+              imgWrapper.appendChild(img);
+              imagesDiv.appendChild(imgWrapper);
+            })(images[i]);
           }
           div.appendChild(imagesDiv);
         }
