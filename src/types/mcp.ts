@@ -5,10 +5,16 @@
 export interface MCPServerConfig {
   name: string;
   description?: string;
-  command: string;
+  // stdio 传输方式
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  // SSE 传输方式
+  url?: string;
+  headers?: Record<string, string>;
+  // 通用配置
+  transport?: 'stdio' | 'sse';
   enabled: boolean;
   autoStart?: boolean;
 }

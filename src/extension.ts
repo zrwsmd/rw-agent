@@ -823,10 +823,18 @@ async function handleMCPOpenConfig(): Promise<void> {
     if (!fs.existsSync(configFilePath)) {
       const defaultConfig = {
         mcpServers: {
-          "example-server": {
+          "example-stdio-server": {
             "command": "npx",
             "args": ["your-mcp-package"],
-            "description": "示例 MCP 服务器（请修改）",
+            "description": "stdio 传输示例（请修改）",
+            "enabled": false,
+            "autoStart": false
+          },
+          "example-sse-server": {
+            "transport": "sse",
+            "url": "http://localhost:3000/sse",
+            "headers": {},
+            "description": "SSE 传输示例（请修改）",
             "enabled": false,
             "autoStart": false
           }
