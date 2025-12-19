@@ -155,7 +155,8 @@ export function activate(context: vscode.ExtensionContext) {
         if (!agentEngine) {
           await initializeAgent(context);
         }
-        await restoreConversation(context);
+        // 优先从内存中恢复当前会话（处理切换视图的情况）
+        await restoreCurrentSession();
         break;
 
       case 'user_message':
@@ -536,21 +537,40 @@ async function saveConversation(
 /**
  * 恢复对话
  */
-async function restoreConversation(
-  context: vscode.ExtensionContext
-): Promise<void> {
+/**
+ * 恢复当前会话（优先从内存，其次从存储）
+ */
+async function restoreCurrentSession(): Promise<void> {
+  // 优先从 agentEngine 的 contextManager 恢复（处理切换视图的情况）
+  if (agentEngine) {
+    const history = agentEngine.getContextManager().getHistory();
+    if (history.length > 0) {
+      console.log('[Extension] 从内存恢复当前会话，消息数:', history.length);
+      chatPanelProvider?.postMessage({
+        type: 'conversation_loaded',
+        messages: history.map(m => ({ 
+          role: m.role, 
+          content: m.content,
+          toolCall: m.toolCall,
+        })),
+      });
+      return;
+    }
+  }
+
+  // 如果内存中没有，尝试从存储恢复
   if (!conversationStorage) {
     return;
   }
 
   try {
-    // 尝试加载当前对话
     const conversation = await conversationStorage.loadCurrentConversation();
     if (!conversation || conversation.messages.length === 0) {
       return;
     }
 
     currentConversation = conversation;
+    console.log('[Extension] 从存储恢复对话，消息数:', conversation.messages.length);
 
     // 恢复消息到 UI
     chatPanelProvider?.postMessage({
@@ -569,8 +589,17 @@ async function restoreConversation(
       }
     }
   } catch (error) {
-    console.error('恢复对话失败:', error);
+    console.error('[Extension] 恢复对话失败:', error);
   }
+}
+
+/**
+ * 恢复对话（从存储）- 保留用于其他场景
+ */
+async function restoreConversation(
+  _context: vscode.ExtensionContext
+): Promise<void> {
+  await restoreCurrentSession();
 }
 
 /**
