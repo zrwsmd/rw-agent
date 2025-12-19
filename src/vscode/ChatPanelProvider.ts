@@ -808,50 +808,80 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 8px;
+    }
+    .mcp-server-info {
+      flex: 1;
     }
     .mcp-server-name {
       font-weight: 600;
       color: var(--vscode-foreground);
-    }
-    .mcp-status-btn {
-      background: none;
-      border: none;
-      font-size: 16px;
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
-      transition: background 0.15s;
-    }
-    .mcp-status-btn:hover {
-      background: var(--vscode-toolbar-hoverBackground);
-    }
-    .mcp-server-status {
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 500;
-    }
-    .mcp-server-status.running {
-      background: var(--vscode-testing-iconPassed);
-      color: white;
-    }
-    .mcp-server-status.stopped {
-      background: var(--vscode-descriptionForeground);
-      color: white;
-    }
-    .mcp-server-status.error {
-      background: var(--vscode-errorForeground);
-      color: white;
+      margin-bottom: 4px;
     }
     .mcp-server-description {
       color: var(--vscode-descriptionForeground);
       font-size: 12px;
-      margin-bottom: 8px;
     }
     .mcp-server-actions {
       display: flex;
-      gap: 8px;
+      align-items: center;
+      gap: 12px;
+    }
+    /* 开关样式 */
+    .mcp-switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 20px;
+      cursor: pointer;
+    }
+    .mcp-switch-input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .mcp-switch-slider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-radius: 20px;
+      transition: all 0.3s ease;
+    }
+    .mcp-switch-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+    }
+    .mcp-switch-slider.switch-off {
+      background-color: #555;
+    }
+    .mcp-switch-slider.switch-on {
+      background-color: #4caf50;
+    }
+    .mcp-switch-slider.switch-on:before {
+      transform: translateX(20px);
+    }
+    .mcp-switch-slider.switch-error {
+      background-color: #f44336;
+    }
+    .mcp-delete-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      font-size: 14px;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+    .mcp-delete-btn:hover {
+      opacity: 1;
     }
     .mcp-action-btn {
       background: var(--vscode-button-secondaryBackground);
@@ -1931,31 +1961,32 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
 
         mcpServersList.innerHTML = servers.map(function(server) {
-          var statusClass = server.status === 'running' ? 'running' : 
-                           server.status === 'error' ? 'error' : 'stopped';
-          var statusText = server.status === 'running' ? '运行中' : 
-                          server.status === 'error' ? '错误' : '已停止';
-          var statusIcon = server.status === 'running' ? '🟢' : 
-                          server.status === 'error' ? '🔴' : '⚪';
+          var isRunning = server.status === 'running';
+          var isError = server.status === 'error';
+          var statusText = isRunning ? 'Enabled' : isError ? 'Error' : 'Disabled';
+          var switchClass = isRunning ? 'switch-on' : isError ? 'switch-error' : 'switch-off';
           
           return '<div class="mcp-server-item">' +
             '<div class="mcp-server-header">' +
-              '<div class="mcp-server-name">' + server.name + '</div>' +
-              '<div style="display: flex; gap: 8px;">' +
-                '<button class="mcp-status-btn" data-server-name="' + server.name + '" data-server-status="' + server.status + '" title="' + statusText + '">' +
-                  statusIcon +
-                '</button>' +
-                '<button class="mcp-delete-btn" data-server-name="' + server.name + '" title="删除服务器" style="background: none; border: none; color: var(--vscode-errorForeground); cursor: pointer; padding: 4px; font-size: 14px;">🗑️</button>' +
+              '<div class="mcp-server-info">' +
+                '<div class="mcp-server-name">' + server.name + '</div>' +
+                '<div class="mcp-server-description">' + (server.description || '无描述') + '</div>' +
+              '</div>' +
+              '<div class="mcp-server-actions">' +
+                '<label class="mcp-switch" title="' + statusText + '">' +
+                  '<input type="checkbox" class="mcp-switch-input" data-server-name="' + server.name + '" data-server-status="' + server.status + '" ' + (isRunning ? 'checked' : '') + '>' +
+                  '<span class="mcp-switch-slider ' + switchClass + '"></span>' +
+                '</label>' +
+                '<button class="mcp-delete-btn" data-server-name="' + server.name + '" title="删除服务器">🗑️</button>' +
               '</div>' +
             '</div>' +
-            '<div class="mcp-server-description">' + (server.description || '无描述') + '</div>' +
           '</div>';
         }).join('');
         
-        // 绑定点击事件
-        var statusButtons = mcpServersList.querySelectorAll('.mcp-status-btn');
-        for (var i = 0; i < statusButtons.length; i++) {
-          statusButtons[i].onclick = function() {
+        // 绑定开关事件
+        var switchInputs = mcpServersList.querySelectorAll('.mcp-switch-input');
+        for (var i = 0; i < switchInputs.length; i++) {
+          switchInputs[i].onchange = function() {
             var name = this.getAttribute('data-server-name');
             var status = this.getAttribute('data-server-status');
             toggleMCPServer(name, status);
