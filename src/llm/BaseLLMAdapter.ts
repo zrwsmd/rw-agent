@@ -75,11 +75,28 @@ export abstract class BaseLLMAdapter implements LLMAdapter {
   }
 
   /**
+   * 获取消息的字符串内容
+   */
+  protected getStringContent(content: LLMMessage['content']): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .filter((item): item is { type: 'text'; text: string } => item.type === 'text')
+        .map(item => item.text)
+        .join('\n');
+    }
+    return '';
+  }
+
+  /**
    * 估算消息列表的 token 数
    */
   estimateMessagesTokens(messages: LLMMessage[]): number {
     return messages.reduce((total, msg) => {
-      return total + this.estimateTokens(msg.content) + 4;
+      const textContent = this.getStringContent(msg.content);
+      return total + this.estimateTokens(textContent) + 4;
     }, 0);
   }
 

@@ -16,6 +16,14 @@ export interface ToolCallInfo {
 }
 
 /**
+ * 图片数据
+ */
+export interface ImageData {
+  mimeType: string;
+  data: string; // base64
+}
+
+/**
  * 消息
  */
 export interface Message {
@@ -24,6 +32,7 @@ export interface Message {
   content: string;
   timestamp: number;
   toolCall?: ToolCallInfo;
+  images?: ImageData[]; // 图片附件
 }
 
 /**

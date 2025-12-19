@@ -41,7 +41,11 @@ export type AgentEvent =
  * Agent 引擎接口
  */
 export interface AgentEngine {
-  processMessage(message: string, mode: AgentMode): AsyncIterable<AgentEvent>;
+  processMessage(
+    message: string, 
+    mode: AgentMode,
+    images?: Array<{ mimeType: string; data: string }>
+  ): AsyncIterable<AgentEvent>;
   cancel(): void;
   getState(): AgentState;
 }

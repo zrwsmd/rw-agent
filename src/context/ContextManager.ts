@@ -71,15 +71,38 @@ export class ContextManagerImpl implements IContextManager {
 
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const msg = this.messages[i];
-      const content = this.formatMessageContent(msg);
-      const msgTokens = estimateTokens(content);
+      const textContent = this.formatMessageContent(msg);
+      const msgTokens = estimateTokens(textContent) + (msg.images?.length || 0) * 500; // 图片估算 500 tokens
 
       if (currentTokens + msgTokens > maxTokens) {
         break;
       }
 
       const role = this.mapRole(msg.role);
-      messagesToInclude.unshift({ role, content });
+      
+      // 构建消息内容（支持多模态）
+      if (msg.images && msg.images.length > 0) {
+        const contentParts: Array<{ type: 'text'; text: string } | { type: 'image'; mimeType: string; data: string }> = [];
+        
+        // 先添加图片
+        for (const img of msg.images) {
+          contentParts.push({
+            type: 'image',
+            mimeType: img.mimeType,
+            data: img.data,
+          });
+        }
+        
+        // 再添加文本
+        if (textContent) {
+          contentParts.push({ type: 'text', text: textContent });
+        }
+        
+        messagesToInclude.unshift({ role, content: contentParts });
+      } else {
+        messagesToInclude.unshift({ role, content: textContent });
+      }
+      
       currentTokens += msgTokens;
     }
 

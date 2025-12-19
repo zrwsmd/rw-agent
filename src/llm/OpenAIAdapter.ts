@@ -201,15 +201,33 @@ export class OpenAIAdapter extends BaseLLMAdapter {
   }
 
   /**
+   * 获取消息的字符串内容（覆盖基类方法）
+   */
+  protected override getStringContent(content: LLMMessage['content']): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .filter((item): item is { type: 'text'; text: string } => item.type === 'text')
+        .map(item => item.text)
+        .join('\n');
+    }
+    return '';
+  }
+
+  /**
    * 转换消息格式
    */
   private convertMessages(messages: LLMMessage[]): OpenAIMessage[] {
     return messages.map((m): OpenAIMessage => {
+      const stringContent = this.getStringContent(m.content);
+      
       // 如果消息包含工具调用
       if (m.toolCalls) {
         return {
           role: 'assistant',
-          content: m.content || null,
+          content: stringContent || null,
           tool_calls: m.toolCalls.map((tc) => ({
             id: tc.id,
             type: 'function',
@@ -225,7 +243,7 @@ export class OpenAIAdapter extends BaseLLMAdapter {
       if (m.toolCallId) {
         return {
           role: 'tool',
-          content: m.content,
+          content: stringContent,
           tool_call_id: m.toolCallId,
         };
       }
@@ -233,7 +251,7 @@ export class OpenAIAdapter extends BaseLLMAdapter {
       // 普通消息
       return {
         role: m.role,
-        content: m.content,
+        content: stringContent,
       };
     });
   }

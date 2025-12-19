@@ -164,8 +164,8 @@ export function activate(context: vscode.ExtensionContext) {
         break;
 
       case 'user_message':
-        console.log('[Extension] 收到用户消息:', message.content);
-        await handleUserMessage(message.content, context);
+        console.log('[Extension] 收到用户消息:', message.content, '图片数:', message.images?.length || 0);
+        await handleUserMessage(message.content, context, message.images);
         break;
 
       case 'set_mode':
@@ -468,9 +468,10 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
  */
 async function handleUserMessage(
   content: string,
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  images?: Array<{ mimeType: string; data: string }>
 ): Promise<void> {
-  console.log('[Extension] handleUserMessage 被调用, content:', content);
+  console.log('[Extension] handleUserMessage 被调用, content:', content, '图片数:', images?.length || 0);
   console.log('[Extension] agentEngine 状态:', agentEngine ? '已初始化' : '未初始化');
   
   if (!agentEngine) {
@@ -489,7 +490,7 @@ async function handleUserMessage(
 
   try {
     console.log('[Extension] 开始处理消息:', content);
-    for await (const event of agentEngine.processMessage(content, currentMode)) {
+    for await (const event of agentEngine.processMessage(content, currentMode, images)) {
       console.log('[Extension] Agent 事件:', event.type);
       chatPanelProvider?.postMessage({ type: 'agent_event', event });
     }

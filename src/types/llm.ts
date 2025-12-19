@@ -1,11 +1,33 @@
 // src/types/llm.ts
 
 /**
+ * 图片内容
+ */
+export interface ImageContent {
+  type: 'image';
+  mimeType: string; // e.g., 'image/png', 'image/jpeg'
+  data: string; // base64 encoded
+}
+
+/**
+ * 文本内容
+ */
+export interface TextContent {
+  type: 'text';
+  text: string;
+}
+
+/**
+ * 消息内容（支持多模态）
+ */
+export type MessageContent = string | (TextContent | ImageContent)[];
+
+/**
  * LLM 消息
  */
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: MessageContent;
   toolCalls?: ToolCall[];
   toolCallId?: string; // For tool response messages
 }

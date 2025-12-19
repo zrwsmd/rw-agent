@@ -16,6 +16,13 @@ interface GeminiTextPart {
   text: string;
 }
 
+interface GeminiInlineDataPart {
+  inlineData: {
+    mimeType: string;
+    data: string; // base64
+  };
+}
+
 interface GeminiFunctionCallPart {
   functionCall: {
     name: string;
@@ -33,7 +40,7 @@ interface GeminiFunctionResponsePart {
   };
 }
 
-type GeminiPart = GeminiTextPart | GeminiFunctionCallPart | GeminiFunctionResponsePart;
+type GeminiPart = GeminiTextPart | GeminiInlineDataPart | GeminiFunctionCallPart | GeminiFunctionResponsePart;
 
 interface GeminiContent {
   role: 'user' | 'model';
@@ -482,7 +489,23 @@ export class GeminiAdapter extends BaseLLMAdapter {
       const parts: GeminiPart[] = [];
 
       if (msg.content) {
-        parts.push({ text: msg.content });
+        // 处理多模态内容
+        if (typeof msg.content === 'string') {
+          parts.push({ text: msg.content });
+        } else if (Array.isArray(msg.content)) {
+          for (const item of msg.content) {
+            if (item.type === 'text') {
+              parts.push({ text: item.text });
+            } else if (item.type === 'image') {
+              parts.push({
+                inlineData: {
+                  mimeType: item.mimeType,
+                  data: item.data,
+                },
+              });
+            }
+          }
+        }
       }
 
       if (msg.toolCalls) {
@@ -506,11 +529,15 @@ export class GeminiAdapter extends BaseLLMAdapter {
         const toolCall = prevMsg?.toolCalls?.find((tc) => tc.id === msg.toolCallId);
         
         if (toolCall) {
+          // 工具响应内容只能是字符串
+          const responseContent = typeof msg.content === 'string' 
+            ? msg.content 
+            : JSON.stringify(msg.content);
           parts.push({
             functionResponse: {
               name: toolCall.function.name,
               response: {
-                content: msg.content,
+                content: responseContent,
               },
             },
           });
@@ -522,8 +549,14 @@ export class GeminiAdapter extends BaseLLMAdapter {
       }
     }
 
+    // system 消息内容只能是字符串
+    const systemContent = systemMsg?.content;
+    const systemInstruction = typeof systemContent === 'string' 
+      ? systemContent 
+      : undefined;
+
     return {
-      systemInstruction: systemMsg?.content,
+      systemInstruction,
       contents,
     };
   }

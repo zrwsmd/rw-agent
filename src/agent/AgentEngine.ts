@@ -6,7 +6,7 @@ import {
   AgentMode,
   AgentState,
 } from '../types/agent';
-import { LLMAdapter } from '../types/llm';
+import { LLMAdapter, LLMMessage } from '../types/llm';
 import { ToolRegistry } from '../types/tool';
 import { ContextManagerImpl } from '../context/ContextManager';
 import { ReActExecutor } from './ReActExecutor';
@@ -69,7 +69,8 @@ export class AgentEngineImpl implements IAgentEngine {
    */
   async *processMessage(
     message: string,
-    mode: AgentMode
+    mode: AgentMode,
+    images?: Array<{ mimeType: string; data: string }>
   ): AsyncIterable<AgentEvent> {
     // 检查 Token 限制，必要时自动截断
     if (this.contextManager.isNearTokenLimit(0.85)) {
@@ -89,6 +90,7 @@ export class AgentEngineImpl implements IAgentEngine {
       role: 'user',
       content: message,
       timestamp: Date.now(),
+      images: images, // 添加图片
     });
 
     // 发送 Token 使用信息
@@ -195,7 +197,7 @@ export class AgentEngineImpl implements IAgentEngine {
    * ✅ OPTIMIZATION: Use cached skills instead of re-matching
    */
   private async *executeSimpleChat(
-    context: { role: 'system' | 'user' | 'assistant'; content: string }[]
+    context: LLMMessage[]
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '思考中...' };
 
@@ -209,9 +211,15 @@ export class AgentEngineImpl implements IAgentEngine {
       // ✅ Use cached skills instead of re-matching
       if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {
         const userMessages = context.filter(m => m.role === 'user');
-        const latestUserMessage = userMessages.length > 0 
+        const latestContent = userMessages.length > 0 
           ? userMessages[userMessages.length - 1].content 
           : '';
+        // 获取字符串内容
+        const latestUserMessage = typeof latestContent === 'string' 
+          ? latestContent 
+          : (Array.isArray(latestContent) 
+              ? latestContent.filter(p => p.type === 'text').map(p => (p as { type: 'text'; text: string }).text).join('\n')
+              : '');
         const skillsPrompt = this.skillsManager.generateSkillsPrompt(latestUserMessage);
         systemPrompt += skillsPrompt;
       }
@@ -254,7 +262,7 @@ export class AgentEngineImpl implements IAgentEngine {
    */
   private async *executeFunctionCalling(
     goal: string,
-    context: { role: 'system' | 'user' | 'assistant'; content: string }[]
+    context: LLMMessage[]
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '' };
 
@@ -326,7 +334,7 @@ export class AgentEngineImpl implements IAgentEngine {
    */
   private async *executeReAct(
     goal: string,
-    context: { role: 'system' | 'user' | 'assistant'; content: string }[]
+    context: LLMMessage[]
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '' };
 
@@ -398,7 +406,7 @@ export class AgentEngineImpl implements IAgentEngine {
    */
   private async *executePlan(
     goal: string,
-    context: { role: 'system' | 'user' | 'assistant'; content: string }[]
+    context: LLMMessage[]
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'planning', plan: null as unknown as Plan };
 

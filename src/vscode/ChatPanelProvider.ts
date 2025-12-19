@@ -15,7 +15,7 @@ export interface ConversationItem {
  * UI 消息类型
  */
 export type UIMessage =
-  | { type: 'user_message'; content: string }
+  | { type: 'user_message'; content: string; images?: Array<{ mimeType: string; data: string }> }
   | { type: 'agent_event'; event: AgentEvent }
   | { type: 'clear_chat' }
   | { type: 'cancel' }
@@ -465,10 +465,65 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       background: var(--vscode-sideBar-background);
       border-top: 1px solid var(--vscode-panel-border);
     }
+    .image-preview-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .image-preview-container:empty {
+      display: none;
+    }
+    .image-preview-item {
+      position: relative;
+      width: 60px;
+      height: 60px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--vscode-panel-border);
+    }
+    .image-preview-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .image-preview-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 18px;
+      height: 18px;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .image-preview-remove:hover {
+      background: rgba(255, 0, 0, 0.8);
+    }
     .input-wrapper {
       display: flex;
       gap: 8px;
       align-items: flex-end;
+    }
+    .upload-btn {
+      background: transparent;
+      color: var(--vscode-foreground);
+      border: 1px solid var(--vscode-input-border);
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    .upload-btn:hover {
+      background: var(--vscode-toolbar-hoverBackground);
     }
     .input-wrapper textarea {
       flex: 1;
@@ -1256,8 +1311,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   </div>
   
   <div class="input-container">
+    <div class="image-preview-container" id="imagePreviewContainer"></div>
     <div class="input-wrapper">
-      <textarea id="input" placeholder="输入消息，按 Enter 发送..." rows="1"></textarea>
+      <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
+      <button class="upload-btn" id="uploadBtn" title="上传图片 (或 Ctrl+V 粘贴)">📷</button>
+      <textarea id="input" placeholder="输入消息，按 Enter 发送，Ctrl+V 粘贴图片..." rows="1"></textarea>
       <button class="send-btn" id="sendBtn">发送</button>
       <button class="cancel-btn" id="cancelBtn">⏹ 停止</button>
     </div>
@@ -1406,6 +1464,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       var isProcessing = false;
       var currentAssistantMessage = null;
       var cancelBtn = document.getElementById('cancelBtn');
+      var uploadBtn = document.getElementById('uploadBtn');
+      var imageInput = document.getElementById('imageInput');
+      var imagePreviewContainer = document.getElementById('imagePreviewContainer');
+      var pendingImages = []; // 存储待发送的图片 { mimeType, data }
 
       function setProcessing(processing) {
         isProcessing = processing;
@@ -1419,17 +1481,89 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
       }
 
+      // 添加图片到预览
+      function addImagePreview(mimeType, base64Data) {
+        var item = document.createElement('div');
+        item.className = 'image-preview-item';
+        var img = document.createElement('img');
+        img.src = 'data:' + mimeType + ';base64,' + base64Data;
+        var removeBtn = document.createElement('button');
+        removeBtn.className = 'image-preview-remove';
+        removeBtn.innerHTML = '×';
+        removeBtn.onclick = function() {
+          var index = Array.from(imagePreviewContainer.children).indexOf(item);
+          if (index > -1) {
+            pendingImages.splice(index, 1);
+          }
+          item.remove();
+        };
+        item.appendChild(img);
+        item.appendChild(removeBtn);
+        imagePreviewContainer.appendChild(item);
+        pendingImages.push({ mimeType: mimeType, data: base64Data });
+      }
+
+      // 处理文件选择
+      function handleFiles(files) {
+        for (var i = 0; i < files.length; i++) {
+          var file = files[i];
+          if (!file.type.startsWith('image/')) continue;
+          var reader = new FileReader();
+          reader.onload = (function(mimeType) {
+            return function(e) {
+              var base64 = e.target.result.split(',')[1];
+              addImagePreview(mimeType, base64);
+            };
+          })(file.type);
+          reader.readAsDataURL(file);
+        }
+      }
+
+      // 上传按钮点击
+      uploadBtn.onclick = function() {
+        imageInput.click();
+      };
+
+      // 文件选择变化
+      imageInput.onchange = function() {
+        handleFiles(imageInput.files);
+        imageInput.value = '';
+      };
+
+      // Ctrl+V 粘贴图片
+      inputEl.addEventListener('paste', function(e) {
+        var items = e.clipboardData.items;
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].type.startsWith('image/')) {
+            e.preventDefault();
+            var file = items[i].getAsFile();
+            handleFiles([file]);
+            break;
+          }
+        }
+      });
+
       function sendMessage() {
         var content = inputEl.value.trim();
-        if (!content || isProcessing) return;
+        if ((!content && pendingImages.length === 0) || isProcessing) return;
         
         var empty = document.getElementById('emptyState');
         if (empty) empty.remove();
         
-        addMessage('user', content);
-        vscode.postMessage({ type: 'user_message', content: content });
+        // 显示用户消息（包含图片）
+        addMessage('user', content, null, pendingImages);
+        
+        // 发送消息
+        vscode.postMessage({ 
+          type: 'user_message', 
+          content: content,
+          images: pendingImages.length > 0 ? pendingImages : undefined
+        });
+        
+        // 清空
         inputEl.value = '';
-        // 清除保存的输入文本
+        pendingImages = [];
+        imagePreviewContainer.innerHTML = '';
         vscode.postMessage({ type: 'save_input_text', text: '' });
         setProcessing(true);
         currentAssistantMessage = null;
@@ -1466,13 +1600,35 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         return text.trim();
       }
 
-      function addMessage(type, content, rawContent) {
+      function addMessage(type, content, rawContent, images) {
         var empty = document.getElementById('emptyState');
         if (empty) empty.remove();
         
         var div = document.createElement('div');
         div.className = 'message ' + type;
-        div.innerHTML = formatText(content || '').split('\\n').join('<br>');
+        
+        // 如果有图片，先显示图片
+        if (images && images.length > 0) {
+          var imagesDiv = document.createElement('div');
+          imagesDiv.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;';
+          for (var i = 0; i < images.length; i++) {
+            var img = document.createElement('img');
+            img.src = 'data:' + images[i].mimeType + ';base64,' + images[i].data;
+            img.style.cssText = 'max-width: 200px; max-height: 150px; border-radius: 6px; cursor: pointer;';
+            img.onclick = function() {
+              window.open(this.src, '_blank');
+            };
+            imagesDiv.appendChild(img);
+          }
+          div.appendChild(imagesDiv);
+        }
+        
+        // 添加文本内容
+        if (content) {
+          var textDiv = document.createElement('div');
+          textDiv.innerHTML = formatText(content).split('\\n').join('<br>');
+          div.appendChild(textDiv);
+        }
         
         // 为 assistant 消息添加复制按钮
         if (type === 'assistant') {

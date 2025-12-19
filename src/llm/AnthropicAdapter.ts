@@ -357,6 +357,22 @@ export class AnthropicAdapter extends BaseLLMAdapter {
   }
 
   /**
+   * 获取消息的字符串内容（覆盖基类方法）
+   */
+  protected override getStringContent(content: LLMMessage['content']): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .filter((item): item is { type: 'text'; text: string } => item.type === 'text')
+        .map(item => item.text)
+        .join('\n');
+    }
+    return '';
+  }
+
+  /**
    * 准备消息（分离系统消息）
    */
   private prepareMessages(messages: LLMMessage[]): {
@@ -367,12 +383,14 @@ export class AnthropicAdapter extends BaseLLMAdapter {
     const chatMessages = messages
       .filter((m) => m.role !== 'system')
       .map((m): AnthropicMessage => {
+        const stringContent = this.getStringContent(m.content);
+        
         // 如果包含工具调用
         if (m.toolCalls) {
           return {
             role: 'assistant',
             content: [
-              ...(m.content ? [{ type: 'text', text: m.content }] : []),
+              ...(stringContent ? [{ type: 'text', text: stringContent }] : []),
               ...m.toolCalls.map((tc) => ({
                 type: 'tool_use',
                 id: tc.id,
@@ -391,7 +409,7 @@ export class AnthropicAdapter extends BaseLLMAdapter {
               {
                 type: 'tool_result',
                 tool_use_id: m.toolCallId,
-                content: m.content,
+                content: stringContent,
               },
             ],
           };
@@ -400,12 +418,18 @@ export class AnthropicAdapter extends BaseLLMAdapter {
         // 普通消息
         return {
           role: m.role as MessageRole,
-          content: m.content,
+          content: stringContent,
         };
       });
 
+    // 获取系统消息的字符串内容
+    const systemContent = systemMsg?.content;
+    const systemMessage = typeof systemContent === 'string' 
+      ? systemContent 
+      : undefined;
+
     return {
-      systemMessage: systemMsg?.content,
+      systemMessage,
       chatMessages,
     };
   }
