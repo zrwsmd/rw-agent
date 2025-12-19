@@ -150,8 +150,11 @@ export function activate(context: vscode.ExtensionContext) {
     
     switch (message.type) {
       case 'ready':
-        // Webview 准备好了，尝试恢复对话
+        // Webview 准备好了，初始化 Agent 并尝试恢复对话
         console.log('[Extension] Webview 准备好了');
+        if (!agentEngine) {
+          await initializeAgent(context);
+        }
         await restoreConversation(context);
         break;
 
@@ -457,12 +460,17 @@ async function handleUserMessage(
   console.log('[Extension] agentEngine 状态:', agentEngine ? '已初始化' : '未初始化');
   
   if (!agentEngine) {
-    console.log('[Extension] agentEngine 未初始化，发送错误消息');
-    chatPanelProvider?.postMessage({
-      type: 'agent_event',
-      event: { type: 'error', message: '请先点击设置按钮配置 API 密钥' },
-    });
-    return;
+    console.log('[Extension] agentEngine 未初始化，尝试重新初始化...');
+    await initializeAgent(context);
+    
+    if (!agentEngine) {
+      console.log('[Extension] 初始化失败，发送错误消息');
+      chatPanelProvider?.postMessage({
+        type: 'agent_event',
+        event: { type: 'error', message: '请先点击设置按钮配置 API 密钥' },
+      });
+      return;
+    }
   }
 
   try {

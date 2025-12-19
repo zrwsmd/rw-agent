@@ -376,6 +376,51 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       margin-top: 2px;
     }
     
+    /* 工具调用提示 */
+    .message.action {
+      background: linear-gradient(135deg, rgba(100, 150, 255, 0.15), rgba(100, 150, 255, 0.05));
+      border-left: 3px solid var(--vscode-terminal-ansiBlue);
+      font-size: 12px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .action-icon {
+      font-size: 16px;
+    }
+    .action-info {
+      flex: 1;
+      overflow: hidden;
+    }
+    .action-name {
+      font-weight: 600;
+      color: var(--vscode-terminal-ansiBlue);
+    }
+    .action-params {
+      margin-top: 6px;
+      font-size: 11px;
+    }
+    .action-params summary {
+      cursor: pointer;
+      color: var(--vscode-descriptionForeground);
+      user-select: none;
+    }
+    .action-params summary:hover {
+      color: var(--vscode-foreground);
+    }
+    .action-params pre {
+      margin: 6px 0 0 0;
+      padding: 8px;
+      background: var(--vscode-editor-background);
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 11px;
+      line-height: 1.4;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
     /* 输入区域 */
     .input-container {
       padding: var(--spacing);
@@ -1698,6 +1743,27 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             skillDiv.className = 'message skill';
             skillDiv.innerHTML = '<span class="skill-icon">🎯</span><div class="skill-info"><div class="skill-name">使用 Skill: ' + evt.name + '</div>' + (evt.description ? '<div class="skill-desc">' + evt.description + '</div>' : '') + '</div>';
             messagesEl.appendChild(skillDiv);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          } else if (evt.type === 'action') {
+            // 显示工具调用信息
+            var actionDiv = document.createElement('div');
+            actionDiv.className = 'message action';
+            var toolName = evt.tool;
+            var params = evt.params;
+            var paramsStr = '';
+            try {
+              paramsStr = JSON.stringify(params, null, 2);
+            } catch (e) {
+              paramsStr = String(params);
+            }
+            
+            // 判断是否是 MCP 工具
+            var isMCP = toolName.includes('_') && toolName.split('_').length >= 2;
+            var icon = isMCP ? '🔌' : '🔧';
+            var label = isMCP ? 'MCP 工具' : '工具';
+            
+            actionDiv.innerHTML = '<span class="action-icon">' + icon + '</span><div class="action-info"><div class="action-name">' + label + ': ' + toolName + '</div><details class="action-params"><summary>参数</summary><pre>' + paramsStr + '</pre></details></div>';
+            messagesEl.appendChild(actionDiv);
             messagesEl.scrollTop = messagesEl.scrollHeight;
           } else if (evt.type === 'token_usage') {
             // 显示 Token 使用情况
