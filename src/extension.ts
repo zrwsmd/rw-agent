@@ -10,6 +10,7 @@ import { LLMConfig } from './types/llm';
 import { ConversationStorage, createConversationStorage } from './storage';
 import { Conversation } from './types/conversation';
 import { MCPIntegration, createMCPIntegration } from './mcp';
+import { setMCPConfirmCallback } from './tools/MCPTool';
 
 let agentEngine: AgentEngineImpl | null = null;
 let currentMode: AgentMode = 'react';
@@ -399,14 +400,15 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
     try {
       await mcpIntegration.initialize();
       console.log('[Extension] MCP 集成初始化成功');
+      
+      // 设置 MCP 工具确认回调
+      setMCPConfirmCallback(requestConfirmation);
+      console.log('[Extension] MCP 工具确认回调已设置');
     } catch (error) {
       console.error('[Extension] MCP 集成初始化失败:', error);
       // MCP 初始化失败不应该阻止整个系统启动
     }
   }
-  
-  // 为写入和执行工具添加确认机制
-  wrapToolsWithConfirmation(toolRegistry);
   
   // 为写入和执行工具添加确认机制
   wrapToolsWithConfirmation(toolRegistry);
