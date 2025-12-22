@@ -1,4 +1,4 @@
-// src/agent/AgentEngine.ts - Full Optimized Implementation
+// src/agent/AgentEngine.ts - Full Optimized Implementation (Bug Fixed)
 
 import {
   AgentEngine as IAgentEngine,
@@ -136,7 +136,7 @@ export class AgentEngineImpl implements IAgentEngine {
         }
       } else {
         // Simple chat without tools
-        yield* this.executeSimpleChat(context);
+        yield* this.executeSimpleChat(message, context);
       }
     } else {
       // Plan mode
@@ -192,7 +192,7 @@ export class AgentEngineImpl implements IAgentEngine {
       'file', 'read', 'write', 'create', 'search', 'find',
       'grep', 'execute', 'run', 'command',
       '代码', '项目', '目录', '文件夹', 'convert', '转换',
-      '文言文', '列表', '获取'
+      '文言文', '列表', '获取', '网络', '网上',
     ];
     
     const lowerMessage = message.toLowerCase();
@@ -201,9 +201,10 @@ export class AgentEngineImpl implements IAgentEngine {
 
   /**
    * 简单聊天模式 - 直接调用 LLM
-   * ✅ OPTIMIZATION: Use cached skills instead of re-matching
+   * ✅ BUG FIXED: Use cached skills instead of re-matching
    */
   private async *executeSimpleChat(
+    message: string,
     context: LLMMessage[]
   ): AsyncIterable<AgentEvent> {
     this.state = { status: 'thinking', thought: '思考中...' };
@@ -217,22 +218,25 @@ export class AgentEngineImpl implements IAgentEngine {
       const today = new Date();
       const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
       
-      let systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
+      // ✅ BUG FIX: Build system prompt AFTER skills check
+      let systemPrompt = '';
       
       // ✅ Use cached skills instead of re-matching
       if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {
-        const userMessages = context.filter(m => m.role === 'user');
-        const latestContent = userMessages.length > 0 
-          ? userMessages[userMessages.length - 1].content 
-          : '';
-        // 获取字符串内容
-        const latestUserMessage = typeof latestContent === 'string' 
-          ? latestContent 
-          : (Array.isArray(latestContent) 
-              ? latestContent.filter(p => p.type === 'text').map(p => (p as { type: 'text'; text: string }).text).join('\n')
-              : '');
-        const skillsPrompt = this.skillsManager.generateSkillsPrompt(latestUserMessage);
+        console.log('[AgentEngine] 简单聊天模式检测到匹配的 Skills:', 
+          this.cachedMatchedSkills.map(s => s.name));
+        
+        // Generate skills prompt with the original message
+        const skillsPrompt = this.skillsManager.generateSkillsPrompt(message);
+        
+        // Build system prompt with skills
+        systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
         systemPrompt += skillsPrompt;
+        
+        console.log('[AgentEngine] Skills 提示已注入到简单聊天模式');
+      } else {
+        // No skills matched, use default prompt
+        systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
       }
       
       const messages = [
