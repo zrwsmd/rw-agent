@@ -46,7 +46,8 @@ export type UIMessage =
   | { type: 'mcp_marketplace_list'; servers: any[] }
   | { type: 'mcp_server_status_changed'; status: any }
   | { type: 'save_input_text'; text: string }
-  | { type: 'restore_input_text'; text: string };
+  | { type: 'restore_input_text'; text: string }
+  | { type: 'sync_processing_state'; isProcessing: boolean };
 
 /**
  * 聊天面板提供者
@@ -74,6 +75,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       enableScripts: true,
       localResourceRoots: [this._extensionUri],
     };
+
+    // ✅ 保持 webview 在隐藏时的状态，防止切换视图时丢失执行状态
+    (webviewView as any).retainContextWhenHidden = true;
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
@@ -1587,6 +1591,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       try {
         console.log('[ChatPanel] Script starting...');
         var vscode = acquireVsCodeApi();
+        
+        // ✅ 恢复之前保存的状态
+        var previousState = vscode.getState() || {};
+        console.log('[ChatPanel] Restored state:', previousState);
+        
         var messagesEl = document.getElementById('messages');
         var inputEl = document.getElementById('input');
         var sendBtn = document.getElementById('sendBtn');
@@ -1601,13 +1610,48 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           settingsBtn: !!settingsBtn
         });
       
-      var isProcessing = false;
+      var isProcessing = previousState.isProcessing || false;
       var currentAssistantMessage = null;
       var cancelBtn = document.getElementById('cancelBtn');
       var uploadBtn = document.getElementById('uploadBtn');
       var imageInput = document.getElementById('imageInput');
       var imagePreviewContainer = document.getElementById('imagePreviewContainer');
       var pendingImages = []; // 存储待发送的图片 { mimeType, data }
+
+      // ✅ 保存状态的函数
+      function saveState() {
+        vscode.setState({
+          isProcessing: isProcessing,
+          messagesHtml: messagesEl.innerHTML
+        });
+      }
+
+      function setProcessing(processing) {
+        isProcessing = processing;
+        sendBtn.disabled = processing;
+        if (processing) {
+          sendBtn.style.display = 'none';
+          cancelBtn.classList.add('show');
+        } else {
+          sendBtn.style.display = 'block';
+          cancelBtn.classList.remove('show');
+        }
+        // ✅ 保存状态
+        saveState();
+      }
+      
+      // ✅ 恢复 UI 状态
+      if (previousState.isProcessing) {
+        setProcessing(true);
+      }
+      if (previousState.messagesHtml) {
+        messagesEl.innerHTML = previousState.messagesHtml;
+        // 找到最后一个 assistant 消息作为 currentAssistantMessage
+        var assistantMsgs = messagesEl.querySelectorAll('.message.assistant');
+        if (assistantMsgs.length > 0) {
+          currentAssistantMessage = assistantMsgs[assistantMsgs.length - 1];
+        }
+      }
 
       function setProcessing(processing) {
         isProcessing = processing;
@@ -1918,6 +1962,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         
         messagesEl.appendChild(div);
         messagesEl.scrollTop = messagesEl.scrollHeight;
+        // ✅ 保存状态
+        saveState();
         return div;
       }
 
@@ -1952,6 +1998,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         div.appendChild(contentDiv);
         messagesEl.appendChild(div);
         messagesEl.scrollTop = messagesEl.scrollHeight;
+        // ✅ 保存状态
+        saveState();
         return div;
       }
 
@@ -2000,6 +2048,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           '</details>';
         messagesEl.appendChild(actionDiv);
         messagesEl.scrollTop = messagesEl.scrollHeight;
+        // ✅ 保存状态
+        saveState();
         return actionDiv;
       }
 
@@ -2285,6 +2335,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                 currentAssistantMessage.appendChild(copyBtn);
               }
               messagesEl.scrollTop = messagesEl.scrollHeight;
+              // ✅ 定期保存状态（每 50 个 token 保存一次，避免频繁保存）
+              if (Math.random() < 0.02) saveState();
             }
           } else if (evt.type === 'skill') {
             // 显示 skill 使用提示
@@ -2293,6 +2345,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             skillDiv.innerHTML = '<span class="skill-icon">🎯</span><div class="skill-info"><div class="skill-name">使用 Skill: ' + evt.name + '</div>' + (evt.description ? '<div class="skill-desc">' + evt.description + '</div>' : '') + '</div>';
             messagesEl.appendChild(skillDiv);
             messagesEl.scrollTop = messagesEl.scrollHeight;
+            saveState();
           } else if (evt.type === 'action') {
             // 显示工具调用信息
             var actionDiv = document.createElement('div');
@@ -2338,6 +2391,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               '</details>';
             messagesEl.appendChild(actionDiv);
             messagesEl.scrollTop = messagesEl.scrollHeight;
+            saveState();
           } else if (evt.type === 'token_usage') {
             // 显示 Token 使用情况
             var tokenUsageEl = document.getElementById('tokenUsage');
@@ -2406,6 +2460,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           // 恢复输入框文本
           if (message.text) {
             inputEl.value = message.text;
+          }
+        } else if (message.type === 'sync_processing_state') {
+          // ✅ 同步处理状态（从后端恢复）
+          console.log('[ChatPanel] 同步处理状态:', message.isProcessing);
+          setProcessing(message.isProcessing);
+          if (message.isProcessing) {
+            // 如果正在处理，找到最后一个 assistant 消息作为 currentAssistantMessage
+            var assistantMsgs = messagesEl.querySelectorAll('.message.assistant');
+            if (assistantMsgs.length > 0) {
+              currentAssistantMessage = assistantMsgs[assistantMsgs.length - 1];
+            }
           }
         }
       });

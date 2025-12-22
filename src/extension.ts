@@ -19,6 +19,7 @@ let conversationStorage: ConversationStorage | null = null;
 let currentConversation: Conversation | null = null;
 let mcpIntegration: MCPIntegration | null = null;
 let extensionContext: vscode.ExtensionContext | null = null;
+let isProcessing = false; // ✅ 跟踪当前是否正在处理消息
 
 // 确认请求管理
 interface ConfirmRequest {
@@ -252,6 +253,8 @@ export function activate(context: vscode.ExtensionContext) {
         if (agentEngine) {
           agentEngine.cancel();
         }
+        // ✅ 重置处理状态
+        isProcessing = false;
         break;
 
       case 'confirm_response':
@@ -490,6 +493,9 @@ async function handleUserMessage(
 
   try {
     console.log('[Extension] 开始处理消息:', content);
+    // ✅ 设置处理状态
+    isProcessing = true;
+    
     for await (const event of agentEngine.processMessage(content, currentMode, images)) {
       console.log('[Extension] Agent 事件:', event.type);
       chatPanelProvider?.postMessage({ type: 'agent_event', event });
@@ -507,6 +513,9 @@ async function handleUserMessage(
         message: error instanceof Error ? error.message : '处理消息时发生错误',
       },
     });
+  } finally {
+    // ✅ 重置处理状态
+    isProcessing = false;
   }
 }
 
@@ -552,6 +561,12 @@ async function saveConversation(
  */
 async function restoreCurrentSession(): Promise<void> {
   let restored = false;
+
+  // ✅ 同步执行状态到 webview
+  chatPanelProvider?.postMessage({
+    type: 'sync_processing_state',
+    isProcessing: isProcessing,
+  });
 
   // 优先从 agentEngine 的 contextManager 恢复（处理切换视图的情况）
   if (agentEngine) {
