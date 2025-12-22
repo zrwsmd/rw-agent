@@ -5,6 +5,7 @@ export { FileSearchTool } from './FileSearchTool';
 export { GrepSearchTool } from './GrepSearchTool';
 export { ShellCommandTool } from './ShellCommandTool';
 export { SkillScriptTool, createSkillScriptTool } from './SkillScriptTool';
+export { WebSearchTool } from './WebSearchTool';
 
 export { MCPTool, createMCPTool } from './MCPTool';
 export { ToolRegistryImpl, createToolRegistry } from './ToolRegistry';
@@ -16,6 +17,7 @@ import { FileSearchTool } from './FileSearchTool';
 import { GrepSearchTool } from './GrepSearchTool';
 import { ShellCommandTool } from './ShellCommandTool';
 import { SkillScriptTool } from './SkillScriptTool';
+import { WebSearchTool } from './WebSearchTool';
 
 import { SkillsManager } from '../skills';
 
@@ -33,6 +35,7 @@ export function createDefaultTools(
   registry.register(new FileSearchTool(workspaceRoot));
   registry.register(new GrepSearchTool(workspaceRoot));
   registry.register(new ShellCommandTool(workspaceRoot));
+  registry.register(new WebSearchTool());
 
   // 注册 skill 相关工具
   const skillScriptTool = new SkillScriptTool();

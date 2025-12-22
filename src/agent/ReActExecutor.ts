@@ -233,7 +233,13 @@ export class ReActExecutor {
         ? `\n\n之前的行动和观察:\n${observations.join('\n\n')}`
         : '';
 
+    // 获取当前日期
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
+
     return `你是一个智能助手，使用 ReAct（推理-行动）模式来完成任务。
+
+当前日期：${dateStr}
 
 ## 可用工具
 ${toolDescriptions}

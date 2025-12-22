@@ -206,7 +206,11 @@ export class AgentEngineImpl implements IAgentEngine {
     try {
       let fullResponse = '';
       
-      let systemPrompt = '你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。';
+      // 获取当前日期
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
+      
+      let systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
       
       // ✅ Use cached skills instead of re-matching
       if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {

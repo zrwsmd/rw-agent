@@ -145,8 +145,18 @@ export class FunctionCallingExecutor {
     let iteration = 0;
     const messages: LLMMessage[] = [...context];
 
+    // 获取当前日期
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
+    
+    // 添加系统消息（包含当前日期）
+    messages.unshift({
+      role: 'system',
+      content: `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`,
+    });
+
     // 添加初始用户消息（如果需要）
-    if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
+    if (context.length === 0 || context[context.length - 1].role !== 'user') {
       let userContent = goal;
       if (skillsPrompt) {
         userContent = `${goal}\n\n${skillsPrompt}`;
