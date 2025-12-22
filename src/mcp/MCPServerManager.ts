@@ -315,10 +315,22 @@ class MCPServerProcess extends EventEmitter implements MCPServerInstance {
 
     try {
       console.log(`[MCP:${this.config.name}] 启动进程: ${this.config.command} ${(this.config.args || []).join(' ')}`);
+      console.log(`[MCP:${this.config.name}] 工作目录: ${this.config.cwd || '(默认)'}`);
+      console.log(`[MCP:${this.config.name}] 环境变量: ${JSON.stringify(this.config.env || {})}`);
+      console.log(`[MCP:${this.config.name}] PATH: ${process.env.PATH?.substring(0, 200)}...`);
+      
+      // 合并环境变量，确保 PATH 正确
+      const mergedEnv = { 
+        ...process.env, 
+        ...this.config.env,
+        // 确保 Windows 上的 PATH 正确
+        PATH: process.env.PATH,
+        Path: process.env.Path,
+      };
       
       this.process = spawn(this.config.command, this.config.args || [], {
         cwd: this.config.cwd,
-        env: { ...process.env, ...this.config.env },
+        env: mergedEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: true, // 在 Windows 上使用 shell 启动
       });

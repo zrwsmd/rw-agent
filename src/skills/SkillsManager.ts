@@ -60,6 +60,7 @@ export class SkillsManager {
     this.skills.clear();
     
     console.log('[SkillsManager] 工作区根目录:', this.workspaceRoot);
+    console.log('[SkillsManager] 工作区根目录是否存在:', fs.existsSync(this.workspaceRoot));
     
     // 支持 .claude/skills（Claude 风格）和 .agent/skills
     const skillsDirs = [
@@ -69,6 +70,7 @@ export class SkillsManager {
 
     for (const skillsDir of skillsDirs) {
       console.log('[SkillsManager] 检查 skills 目录:', skillsDir);
+      console.log('[SkillsManager] 目录是否存在:', fs.existsSync(skillsDir));
       if (!fs.existsSync(skillsDir)) {
         console.log('[SkillsManager] 目录不存在:', skillsDir);
         continue;
