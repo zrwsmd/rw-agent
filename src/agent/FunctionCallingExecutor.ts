@@ -149,23 +149,31 @@ export class FunctionCallingExecutor {
     const today = new Date();
     const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
     
-    // 添加系统消息（包含当前日期）
+    // 构建系统消息（包含当前日期和 Skills 提示）
+    let systemContent = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
+    
+    // ✅ 将 skillsPrompt 添加到系统消息中，而不是用户消息
+    if (skillsPrompt) {
+      systemContent += `\n\n${skillsPrompt}`;
+      console.log('[FunctionCalling] Skills 提示已添加到系统消息');
+    }
+    
     messages.unshift({
       role: 'system',
-      content: `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`,
+      content: systemContent,
     });
 
     // 添加初始用户消息（如果需要）
     if (context.length === 0 || context[context.length - 1].role !== 'user') {
-      let userContent = goal;
-      if (skillsPrompt) {
-        userContent = `${goal}\n\n${skillsPrompt}`;
-      }
-      messages.push({ role: 'user', content: userContent });
+      messages.push({ role: 'user', content: goal });
     }
 
     // 获取工具定义
     const toolDefinitions = toolRegistry.getToolDefinitions();
+    
+    // ✅ 调试：打印工具定义
+    console.log('[FunctionCalling] 工具定义数量:', toolDefinitions.length);
+    console.log('[FunctionCalling] 工具列表:', toolDefinitions.map(t => t.function.name).join(', '));
 
     while (iteration < MAX_ITERATIONS && !this.cancelled) {
       iteration++;

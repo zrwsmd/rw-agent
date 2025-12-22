@@ -119,8 +119,15 @@ export class AgentEngineImpl implements IAgentEngine {
           };
         }
 
+        // ✅ 调试：检查 LLM 适配器类型和工具支持
+        const supportsTools = this.llmAdapter.supportsNativeTools();
+        console.log('[AgentEngine] LLM 适配器类型:', this.llmAdapter.constructor.name);
+        console.log('[AgentEngine] supportsNativeTools():', supportsTools);
+        console.log('[AgentEngine] 工具注册表工具数量:', this.toolRegistry.list().length);
+        console.log('[AgentEngine] 已注册工具:', this.toolRegistry.list().map(t => t.name).join(', '));
+
         // Choose executor based on LLM capabilities
-        if (this.llmAdapter.supportsNativeTools()) {
+        if (supportsTools) {
           console.log('[AgentEngine] 使用原生函数调用模式');
           yield* this.executeFunctionCalling(message, context);
         } else {

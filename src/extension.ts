@@ -452,8 +452,18 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
 
   try {
     const llmAdapter = createLLMAdapter(llmConfig);
+    
+    // ✅ 调试：打印 LLM adapter 信息
+    console.log('[Extension] LLM adapter 类型:', llmAdapter.constructor.name);
+    console.log('[Extension] supportsNativeTools:', llmAdapter.supportsNativeTools());
+    
     agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter, workspaceRoot, mcpIntegration);
     console.log('Agent 引擎初始化成功');
+    
+    // ✅ 调试：打印工具注册表信息
+    console.log('[Extension] 工具注册表工具数量:', toolRegistry.list().length);
+    console.log('[Extension] 已注册工具:', toolRegistry.list().map(t => t.name).join(', '));
+    
     const skills = skillsManager.getAllSkills();
     console.log('Skills 已加载:', skills.length, '个');
     for (const skill of skills) {

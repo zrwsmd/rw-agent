@@ -246,6 +246,13 @@ export class GeminiAdapter extends BaseLLMAdapter {
   ): Promise<LLMResponse> {
     const { systemInstruction, contents } = this.prepareMessages(messages);
 
+    // ✅ 调试：打印工具数量
+    console.log('[Gemini] completeWithTools 被调用');
+    console.log('[Gemini] 工具数量:', options?.tools?.length || 0);
+    if (options?.tools && options.tools.length > 0) {
+      console.log('[Gemini] 工具列表:', options.tools.map(t => t.function.name).join(', '));
+    }
+
     const requestBody: {
       contents: GeminiContent[];
       systemInstruction?: { parts: Array<{ text: string }> };
@@ -275,6 +282,9 @@ export class GeminiAdapter extends BaseLLMAdapter {
           ),
         },
       ];
+      console.log('[Gemini] 已添加工具到请求体');
+    } else {
+      console.log('[Gemini] ⚠️ 没有工具被添加到请求体！');
     }
 
     const response = await this.withRetry(() =>
