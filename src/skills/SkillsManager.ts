@@ -481,82 +481,75 @@ export class SkillsManager {
   }
 
   /**
-   * 生成 skills 的 system prompt
+   * 生成 skills 的 system prompt（支持传入已匹配的 skills）
    */
-  public generateSkillsPrompt(userMessage: string): string {
-    const matchedSkills = this.matchSkills(userMessage);
+  public generateSkillsPrompt(userMessage: string, matchedSkills?: Skill[]): string {
+    // 如果没有传入已匹配的 skills，使用空数组（废弃的 matchSkills 返回空）
+    const skills = matchedSkills || [];
 
-    if (matchedSkills.length === 0) {
+    if (skills.length === 0) {
       return '';
     }
 
-    let prompt = '\n\n## 🎯 重要：请使用以下 Skills 完成任务\n\n';
-    prompt += '**注意：你必须严格按照匹配的 Skill 的角色和指导来回复用户。**\n\n';
-    prompt += `**用户问题：** ${userMessage}\n\n`;
-    prompt += '**匹配的专业领域：**\n\n';
+    let prompt = '\n\n## 🎯 匹配到专业 Skill，请严格按照以下指导执行\n\n';
     
-    for (const skill of matchedSkills) {
+    for (const skill of skills) {
       // 移除 frontmatter
       let content = skill.content.replace(/^---\n[\s\S]*?\n---\n*/, '');
       
-      // 对于很长的内容，可以考虑智能截取（保留前 8000 字符）
       if (content.length > 8000) {
-        content = content.substring(0, 8000) + '\n\n[内容已截取，如需完整信息请询问具体细节]';
+        content = content.substring(0, 8000) + '\n\n[内容已截取]';
       }
       
-      prompt += `### Skill: ${skill.name}\n${content}\n`;
+      prompt += `### Skill: ${skill.name}\n`;
+      prompt += `**描述:** ${skill.config.description || '无'}\n\n`;
 
-      // 列出可用脚本（强调使用方式）
+      // 🔥 关键：如果有脚本，强制要求优先执行脚本
       if (skill.scripts.size > 0) {
-        prompt += '\n**📜 可用的辅助脚本:**\n';
-        prompt += '**重要：这些是辅助工具脚本，不是用来完成用户任务的主要方法！**\n\n';
-        for (const [name, scriptPath] of skill.scripts) {
-          prompt += `- 脚本名: \`${name}\` (文件: ${path.basename(scriptPath)})\n`;
+        prompt += '## ⚠️ 强制执行要求：此 Skill 包含可执行脚本\n\n';
+        prompt += '**你必须使用 `skill_script` 工具执行脚本来完成任务，不要自己编写代码！**\n\n';
+        prompt += '### 可用脚本:\n';
+        
+        for (const [scriptName, scriptPath] of skill.scripts) {
+          prompt += `- **${scriptName}** (${path.basename(scriptPath)})\n`;
         }
-        prompt += '\n**⚠️ 注意：**\n';
-        prompt += `- 这些脚本只是辅助工具，不要尝试调用不存在的脚本\n`;
-        prompt += `- 你应该按照 Skill 文档中的指导，直接编写代码或提供解决方案\n`;
-        prompt += `- 只有在文档明确说明需要使用某个脚本时，才使用 skill_script 工具\n`;
-        prompt += `- 如果需要执行脚本，使用: skill_script 工具，参数 skillName="${skill.name}", scriptName="<上面列出的脚本名>"\n`;
+        
+        prompt += '\n### 执行方式:\n';
+        prompt += '```\n';
+        prompt += `工具: skill_script\n`;
+        prompt += `参数:\n`;
+        prompt += `  skillName: "${skill.name}"\n`;
+        prompt += `  scriptName: "<脚本名>"\n`;
+        prompt += `  args: ["--参数1", "值1", "--参数2", "值2"]\n`;
+        prompt += '```\n\n';
+        
+        prompt += '### Skill 文档（包含脚本用法）:\n';
+        prompt += content + '\n\n';
+        
+        prompt += '---\n';
+        prompt += '**🚨 执行规则:**\n';
+        prompt += '1. **必须调用脚本** - 不要自己写代码实现，直接用 skill_script 工具\n';
+        prompt += '2. **参照文档** - 按照上面文档中的参数说明传递 args\n';
+        prompt += '3. **立即执行** - 不要询问用户，直接调用脚本\n';
+        prompt += '4. **报告结果** - 执行后告诉用户结果\n\n';
+        
+      } else {
+        // 没有脚本的 skill，作为知识型指导
+        prompt += '### Skill 文档:\n';
+        prompt += content + '\n\n';
+        
+        prompt += '**💡 执行方式:** 这是知识型 Skill，请按照文档指导提供解决方案。\n\n';
       }
-      
-      // 无论是否有脚本，都提供角色扮演指导
-      prompt += '\n**💡 你的角色:**\n';
-      prompt += `你是 "${skill.config.name || skill.name}" 领域的专家。\n`;
-      prompt += `请按照上述 Skill 文档中的指导、最佳实践和示例来帮助用户。\n`;
-      prompt += `直接提供代码、解决方案或专业建议，不要编造不存在的工具或脚本。\n`;
 
       // 列出资源文件
       if (skill.resources.length > 0) {
-        prompt += '\n资源文件:\n';
+        prompt += '### 资源文件:\n';
         for (const resource of skill.resources) {
           prompt += `- ${path.basename(resource)}\n`;
         }
+        prompt += '\n';
       }
-
-      prompt += '\n';
     }
-    
-    prompt += '---\n**🚨 关键执行规则（必须遵守）:**\n\n';
-    
-    prompt += '1. **不要编造或猜测脚本名称**\n';
-    prompt += '   - 只使用上面明确列出的脚本\n';
-    prompt += '   - 如果没有列出脚本，说明这是知识型 Skill，应该直接提供解决方案\n\n';
-    
-    prompt += '2. **主要工作方式**\n';
-    prompt += '   - 按照 Skill 文档中的指导和示例直接编写代码\n';
-    prompt += '   - 提供完整的、可执行的解决方案\n';
-    prompt += '   - 使用文档中推荐的库和方法\n\n';
-    
-    prompt += '3. **何时使用脚本**\n';
-    prompt += '   - 只有当 Skill 文档明确说明需要使用某个脚本时\n';
-    prompt += '   - 并且该脚本在上面的"可用脚本"列表中\n';
-    prompt += '   - 才使用 skill_script 工具执行\n\n';
-    
-    prompt += '4. **立即行动**\n';
-    prompt += '   - 不要询问用户提供更多信息\n';
-    prompt += '   - 直接按照 Skill 指导提供解决方案\n';
-    prompt += '   - 主动提供代码示例和最佳实践\n\n';
 
     return prompt;
   }

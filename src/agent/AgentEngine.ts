@@ -231,8 +231,8 @@ export class AgentEngineImpl implements IAgentEngine {
         console.log('[AgentEngine] 简单聊天模式检测到匹配的 Skills:', 
           this.cachedMatchedSkills.map(s => s.name));
         
-        // Generate skills prompt with the original message
-        const skillsPrompt = this.skillsManager.generateSkillsPrompt(message);
+        // Generate skills prompt with cached skills
+        const skillsPrompt = this.skillsManager.generateSkillsPrompt(message, this.cachedMatchedSkills);
         
         // Build system prompt with skills
         systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
@@ -289,7 +289,7 @@ export class AgentEngineImpl implements IAgentEngine {
     // ✅ Use cached skills (already matched in checkToolsAndCacheSkills)
     let skillsPrompt = '';
     if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {
-      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
+      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal, this.cachedMatchedSkills);
       console.log('[AgentEngine] Skills 注入:', this.cachedMatchedSkills.map(s => s.name));
     }
 
@@ -361,7 +361,7 @@ export class AgentEngineImpl implements IAgentEngine {
     // ✅ Use cached skills (already matched in checkToolsAndCacheSkills)
     let skillsPrompt = '';
     if (this.cachedMatchedSkills.length > 0 && this.skillsManager) {
-      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal);
+      skillsPrompt = this.skillsManager.generateSkillsPrompt(goal, this.cachedMatchedSkills);
       console.log('[AgentEngine] Skills 注入:', this.cachedMatchedSkills.map(s => s.name));
     }
 
