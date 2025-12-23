@@ -33,6 +33,8 @@ export type UIMessage =
   | { type: 'conversation_loaded'; messages: Array<{ role: string; content: string; toolCall?: { name: string; parameters: Record<string, unknown>; result: unknown } }> }
   | { type: 'confirm_action'; requestId: string; title: string; description: string; details: string; options: Array<{ id: string; label: string; primary?: boolean }> }
   | { type: 'confirm_response'; requestId: string; selectedOption: string }
+  | { type: 'diff_preview'; requestId: string; filePath: string; diff: string; isNewFile: boolean; additions: number; deletions: number }
+  | { type: 'diff_response'; requestId: string; confirmed: boolean }
   | { type: 'mcp_list_servers' }
   | { type: 'mcp_list_marketplace' }
   | { type: 'mcp_search'; query: string }
@@ -1412,6 +1414,191 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       outline: 2px solid var(--vscode-focusBorder);
       outline-offset: 2px;
     }
+    
+    /* Diff 预览对话框样式 */
+    .diff-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 400;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(3px);
+    }
+    .diff-dialog {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 800px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+    }
+    .diff-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .diff-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .diff-icon {
+      font-size: 18px;
+    }
+    .diff-badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    .diff-badge.new {
+      background: rgba(40, 167, 69, 0.2);
+      color: #28a745;
+    }
+    .diff-badge.modified {
+      background: rgba(255, 193, 7, 0.2);
+      color: #ffc107;
+    }
+    .diff-close {
+      background: transparent;
+      border: none;
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      font-size: 18px;
+      opacity: 0.6;
+      transition: all 0.2s;
+    }
+    .diff-close:hover {
+      opacity: 1;
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .diff-content {
+      flex: 1;
+      overflow-y: auto;
+      font-family: var(--vscode-editor-font-family);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 150px;
+      max-height: 400px;
+      padding: 8px 0;
+    }
+    .diff-hunk {
+      margin: 8px 16px;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .diff-hunk-header {
+      background: var(--vscode-textCodeBlock-background);
+      color: var(--vscode-descriptionForeground);
+      padding: 6px 12px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .diff-line {
+      display: flex;
+      padding: 1px 0;
+    }
+    .diff-line-num {
+      width: 40px;
+      text-align: right;
+      padding: 0 8px;
+      color: var(--vscode-descriptionForeground);
+      background: var(--vscode-sideBar-background);
+      user-select: none;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .diff-line-content {
+      flex: 1;
+      padding: 0 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .diff-line.added {
+      background: rgba(40, 167, 69, 0.15);
+    }
+    .diff-line.added .diff-line-content {
+      color: #3fb950;
+    }
+    .diff-line.added .diff-line-num {
+      background: rgba(40, 167, 69, 0.25);
+      color: #3fb950;
+    }
+    .diff-line.removed {
+      background: rgba(248, 81, 73, 0.15);
+    }
+    .diff-line.removed .diff-line-content {
+      color: #f85149;
+    }
+    .diff-line.removed .diff-line-num {
+      background: rgba(248, 81, 73, 0.25);
+      color: #f85149;
+    }
+    .diff-line.context {
+      background: transparent;
+    }
+    .diff-line.context .diff-line-content {
+      color: var(--vscode-descriptionForeground);
+    }
+    .diff-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      background: var(--vscode-sideBar-background);
+      border-top: 1px solid var(--vscode-panel-border);
+    }
+    .diff-stats {
+      font-size: 13px;
+      color: var(--vscode-descriptionForeground);
+    }
+    .diff-stats .added { color: #28a745; }
+    .diff-stats .removed { color: #dc3545; }
+    .diff-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .diff-btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+    .diff-btn-secondary {
+      background: var(--vscode-input-background);
+      color: var(--vscode-foreground);
+      border: 1px solid var(--vscode-input-border);
+    }
+    .diff-btn-secondary:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .diff-btn-primary {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
+    .diff-btn-primary:hover {
+      background: var(--vscode-button-hoverBackground);
+    }
   </style>
 </head>
 <body>
@@ -1493,6 +1680,28 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           </div>
         </div>
         <div class="confirm-footer" id="confirmFooter"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diff 预览对话框 -->
+  <div class="diff-overlay" id="diffOverlay" style="display: none;">
+    <div class="diff-dialog">
+      <div class="diff-header">
+        <div class="diff-title">
+          <span class="diff-icon" id="diffIcon">📄</span>
+          <span id="diffFileName">file.txt</span>
+          <span class="diff-badge" id="diffBadge">新建</span>
+        </div>
+        <button class="diff-close" id="diffClose">×</button>
+      </div>
+      <div class="diff-content" id="diffContent"></div>
+      <div class="diff-footer">
+        <div class="diff-stats" id="diffStats">+0 -0</div>
+        <div class="diff-actions">
+          <button class="diff-btn diff-btn-secondary" id="diffReject">✕ 拒绝</button>
+          <button class="diff-btn diff-btn-primary" id="diffConfirm">✓ 确认写入</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2472,6 +2681,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               currentAssistantMessage = assistantMsgs[assistantMsgs.length - 1];
             }
           }
+        } else if (message.type === 'diff_preview') {
+          // 显示 diff 预览对话框
+          showDiffPreview(message.requestId, message.filePath, message.diff, message.isNewFile, message.additions, message.deletions);
         }
       });
 
@@ -2479,6 +2691,121 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       var confirmOverlay = document.getElementById('confirmOverlay');
       var confirmClose = document.getElementById('confirmClose');
       var currentConfirmRequestId = null;
+      
+      // Diff 预览对话框处理
+      var diffOverlay = document.getElementById('diffOverlay');
+      var diffClose = document.getElementById('diffClose');
+      var diffConfirm = document.getElementById('diffConfirm');
+      var diffReject = document.getElementById('diffReject');
+      var currentDiffRequestId = null;
+      
+      function showDiffPreview(requestId, filePath, diff, isNewFile, additions, deletions) {
+        currentDiffRequestId = requestId;
+        
+        // 设置文件名和图标
+        document.getElementById('diffFileName').textContent = filePath;
+        document.getElementById('diffIcon').textContent = isNewFile ? '📄' : '✏️';
+        
+        var badge = document.getElementById('diffBadge');
+        badge.textContent = isNewFile ? '新建' : '修改';
+        badge.className = 'diff-badge ' + (isNewFile ? 'new' : 'modified');
+        
+        // 设置统计信息
+        document.getElementById('diffStats').innerHTML = 
+          '<span class="added">+' + additions + '</span> <span class="removed">-' + deletions + '</span>';
+        
+        // 渲染 diff 内容 - 按 hunk 分组显示
+        var content = document.getElementById('diffContent');
+        content.innerHTML = '';
+        
+        var lines = diff.split('\\n');
+        var currentHunk = null;
+        var oldLineNum = 0;
+        var newLineNum = 0;
+        
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          
+          if (line.startsWith('@@')) {
+            // 解析 hunk header: @@ -1,5 +1,6 @@
+            var match = line.match(/@@ -(\\d+)/);
+            if (match) {
+              oldLineNum = parseInt(match[1]) - 1;
+              newLineNum = parseInt(match[1]) - 1;
+            }
+            var matchNew = line.match(/\\+(\\d+)/);
+            if (matchNew) {
+              newLineNum = parseInt(matchNew[1]) - 1;
+            }
+            
+            // 创建新的 hunk 容器
+            currentHunk = document.createElement('div');
+            currentHunk.className = 'diff-hunk';
+            
+            var hunkHeader = document.createElement('div');
+            hunkHeader.className = 'diff-hunk-header';
+            hunkHeader.textContent = line;
+            currentHunk.appendChild(hunkHeader);
+            
+            content.appendChild(currentHunk);
+          } else if (currentHunk && line !== '') {
+            var lineDiv = document.createElement('div');
+            lineDiv.className = 'diff-line';
+            
+            var lineNumDiv = document.createElement('span');
+            lineNumDiv.className = 'diff-line-num';
+            
+            var lineContentDiv = document.createElement('span');
+            lineContentDiv.className = 'diff-line-content';
+            
+            if (line.startsWith('+')) {
+              lineDiv.className += ' added';
+              newLineNum++;
+              lineNumDiv.textContent = '+' + newLineNum;
+              lineContentDiv.textContent = line.substring(1);
+            } else if (line.startsWith('-')) {
+              lineDiv.className += ' removed';
+              oldLineNum++;
+              lineNumDiv.textContent = '-' + oldLineNum;
+              lineContentDiv.textContent = line.substring(1);
+            } else {
+              lineDiv.className += ' context';
+              oldLineNum++;
+              newLineNum++;
+              lineNumDiv.textContent = oldLineNum.toString();
+              lineContentDiv.textContent = line.substring(1);
+            }
+            
+            lineDiv.appendChild(lineNumDiv);
+            lineDiv.appendChild(lineContentDiv);
+            currentHunk.appendChild(lineDiv);
+          }
+        }
+        
+        diffOverlay.style.display = 'flex';
+      }
+      
+      function closeDiffPreview(confirmed) {
+        diffOverlay.style.display = 'none';
+        if (currentDiffRequestId) {
+          vscode.postMessage({
+            type: 'diff_response',
+            requestId: currentDiffRequestId,
+            confirmed: confirmed
+          });
+          currentDiffRequestId = null;
+        }
+      }
+      
+      diffClose.onclick = function() { closeDiffPreview(false); };
+      diffReject.onclick = function() { closeDiffPreview(false); };
+      diffConfirm.onclick = function() { closeDiffPreview(true); };
+      
+      diffOverlay.onclick = function(e) {
+        if (e.target === diffOverlay) {
+          closeDiffPreview(false);
+        }
+      };
 
       confirmClose.onclick = function() {
         confirmOverlay.style.display = 'none';

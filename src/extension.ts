@@ -78,11 +78,144 @@ function requestConfirmation(
 }
 
 /**
+ * 显示文件写入的 diff 预览并请求确认（通过 webview）
+ */
+async function showDiffAndConfirm(
+  filePath: string,
+  newContent: string,
+  workspaceRoot: string
+): Promise<boolean> {
+  const fs = require('fs');
+  const path = require('path');
+  const absolutePath = path.join(workspaceRoot, filePath);
+  
+  let originalContent = '';
+  let isNewFile = false;
+  
+  try {
+    originalContent = fs.readFileSync(absolutePath, 'utf-8');
+  } catch {
+    isNewFile = true;
+  }
+  
+  // 生成简单的 diff
+  const diff = generateSimpleDiff(originalContent, newContent, isNewFile);
+  
+  // 计算添加和删除的行数
+  let additions = 0;
+  let deletions = 0;
+  diff.split('\n').forEach(line => {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions++;
+    if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+  });
+  
+  const requestId = `diff_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  
+  return new Promise<boolean>((resolve) => {
+    pendingDiffRequests.set(requestId, resolve);
+    
+    // 发送 diff 预览到 webview
+    chatPanelProvider?.postMessage({
+      type: 'diff_preview',
+      requestId,
+      filePath,
+      diff,
+      isNewFile,
+      additions,
+      deletions,
+    });
+    
+    // 60秒超时
+    setTimeout(() => {
+      if (pendingDiffRequests.has(requestId)) {
+        pendingDiffRequests.delete(requestId);
+        resolve(false);
+      }
+    }, 60000);
+  });
+}
+
+/**
+ * 生成 unified diff 格式（使用 diff 库）
+ */
+function generateSimpleDiff(original: string, modified: string, isNewFile: boolean): string {
+  const Diff = require('diff');
+  
+  if (isNewFile) {
+    // 新文件，所有行都是添加
+    const lines = modified.split('\n');
+    let diff = '@@ -0,0 +1,' + lines.length + ' @@\n';
+    diff += lines.map(l => '+' + l).join('\n');
+    return diff;
+  }
+  
+  // 使用 diff 库生成 unified diff
+  const patch = Diff.createPatch('file', original, modified, '', '');
+  
+  // 提取 diff 内容（跳过头部）
+  const lines = patch.split('\n');
+  const diffLines: string[] = [];
+  let inHunk = false;
+  
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      inHunk = true;
+      diffLines.push(line);
+    } else if (inHunk) {
+      // 跳过 "\ No newline at end of file" 这种行
+      if (!line.startsWith('\\')) {
+        diffLines.push(line);
+      }
+    }
+  }
+  
+  return diffLines.join('\n');
+}
+
+// Diff 请求管理
+const pendingDiffRequests = new Map<string, (confirmed: boolean) => void>();
+
+/**
+ * 处理 diff 响应
+ */
+function handleDiffResponse(requestId: string, confirmed: boolean): void {
+  const resolve = pendingDiffRequests.get(requestId);
+  if (resolve) {
+    pendingDiffRequests.delete(requestId);
+    resolve(confirmed);
+  }
+}
+
+/**
  * 为写入和执行工具添加确认机制
  */
-function wrapToolsWithConfirmation(toolRegistry: any): void {
-  const toolsNeedingConfirmation = ['shell_command', 'write_file', 'skill_script'];
+function wrapToolsWithConfirmation(toolRegistry: any, workspaceRoot: string): void {
+  const toolsNeedingConfirmation = ['shell_command', 'skill_script'];
   
+  // 单独处理 write_file - 使用 diff 预览
+  const writeFileTool = toolRegistry.get('write_file');
+  if (writeFileTool) {
+    const originalExecute = writeFileTool.execute.bind(writeFileTool);
+    
+    writeFileTool.execute = async function(params: Record<string, unknown>) {
+      const filePath = params.path as string;
+      const content = params.content as string;
+      
+      // 显示 diff 并请求确认
+      const confirmed = await showDiffAndConfirm(filePath, content, workspaceRoot);
+      
+      if (!confirmed) {
+        return {
+          success: false,
+          output: '用户取消了文件写入操作',
+        };
+      }
+      
+      return originalExecute(params);
+    };
+  }
+  
+  // 其他工具使用 webview 确认
   for (const toolName of toolsNeedingConfirmation) {
     const originalTool = toolRegistry.get(toolName);
     if (!originalTool) continue;
@@ -90,7 +223,6 @@ function wrapToolsWithConfirmation(toolRegistry: any): void {
     const originalExecute = originalTool.execute.bind(originalTool);
     
     originalTool.execute = async function(params: Record<string, unknown>) {
-      // 构建确认请求
       let title = '';
       let description = '';
       let details = '';
@@ -99,11 +231,6 @@ function wrapToolsWithConfirmation(toolRegistry: any): void {
         title = '执行命令';
         description = `Allow execute command?`;
         details = `命令: ${params.command}\n工作目录: ${params.cwd || '(默认)'}`;
-      } else if (toolName === 'write_file') {
-        title = '写入文件';
-        description = `Allow write to ${params.path}?`;
-        const content = params.content as string;
-        details = `文件路径: ${params.path}\n\n内容预览:\n${content.substring(0, 500)}${content.length > 500 ? '\n...' : ''}`;
       } else if (toolName === 'skill_script') {
         title = '执行脚本';
         description = `Allow execute script ${params.skill_name}/${params.script_name}?`;
@@ -111,7 +238,6 @@ function wrapToolsWithConfirmation(toolRegistry: any): void {
         details = `Skill: ${params.skill_name}\n脚本: ${params.script_name}\n参数: ${args?.join(' ') || '(无)'}`;
       }
 
-      // 请求用户确认
       const requestId = `confirm_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       const choice = await requestConfirmation(requestId, title, description, details);
 
@@ -122,7 +248,6 @@ function wrapToolsWithConfirmation(toolRegistry: any): void {
         };
       }
 
-      // 执行原始工具
       return originalExecute(params);
     };
   }
@@ -259,6 +384,10 @@ export function activate(context: vscode.ExtensionContext) {
 
       case 'confirm_response':
         handleConfirmResponse(message.requestId, message.selectedOption);
+        break;
+
+      case 'diff_response':
+        handleDiffResponse(message.requestId, message.confirmed);
         break;
 
       case 'open_settings':
@@ -431,7 +560,7 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   }
   
   // 为写入和执行工具添加确认机制
-  wrapToolsWithConfirmation(toolRegistry);
+  wrapToolsWithConfirmation(toolRegistry, workspaceRoot);
   
   // 打印加载的 skills
   const loadedSkills = skillsManager.getAllSkills();

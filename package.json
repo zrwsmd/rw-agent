@@ -39,7 +39,11 @@
         "vscode-agent.llm.provider": {
           "type": "string",
           "default": "gemini",
-          "enum": ["openai", "anthropic", "gemini"],
+          "enum": [
+            "openai",
+            "anthropic",
+            "gemini"
+          ],
           "description": "LLM 提供商"
         },
         "vscode-agent.llm.model": {
@@ -60,7 +64,10 @@
         "vscode-agent.agent.defaultMode": {
           "type": "string",
           "default": "react",
-          "enum": ["react", "plan"],
+          "enum": [
+            "react",
+            "plan"
+          ],
           "description": "默认 Agent 模式"
         }
       }
@@ -92,6 +99,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "@types/node": "^20.10.0",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
@@ -103,7 +111,8 @@
     "vitest": "^1.0.0"
   },
   "dependencies": {
-    "openai": "^4.20.0",
-    "@anthropic-ai/sdk": "^0.10.0"
+    "@anthropic-ai/sdk": "^0.10.0",
+    "diff": "^8.0.2",
+    "openai": "^4.20.0"
   }
 }
