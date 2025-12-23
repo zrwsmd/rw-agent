@@ -21,6 +21,43 @@ let mcpIntegration: MCPIntegration | null = null;
 let extensionContext: vscode.ExtensionContext | null = null;
 let isProcessing = false; // ✅ 跟踪当前是否正在处理消息
 
+/**
+ * Linux 命令到 Windows 命令的映射
+ */
+const LINUX_TO_WINDOWS: Record<string, string | ((args: string) => string)> = {
+  'ls': (args) => args ? `dir ${args}` : 'dir',
+  'cat': (args) => `type ${args}`,
+  'rm': (args) => args.includes('-r') ? `rmdir /s /q ${args.replace(/-r[f]?\s*/g, '')}` : `del ${args.replace(/-f\s*/g, '')}`,
+  'cp': (args) => `copy ${args.replace(/-r\s*/g, '')}`,
+  'mv': (args) => `move ${args}`,
+  'mkdir': (args) => `mkdir ${args.replace(/-p\s*/g, '')}`,
+  'pwd': () => 'cd',
+  'clear': () => 'cls',
+  'touch': (args) => `type nul > ${args}`,
+  'grep': (args) => `findstr ${args}`,
+  'which': (args) => `where ${args}`,
+};
+
+/**
+ * 将 Linux 命令转换为 Windows 命令
+ */
+function convertLinuxToWindowsCommand(command: string): string {
+  const trimmed = command.trim();
+  const spaceIndex = trimmed.indexOf(' ');
+  const cmdName = spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
+  const args = spaceIndex > 0 ? trimmed.substring(spaceIndex + 1).trim() : '';
+  
+  const converter = LINUX_TO_WINDOWS[cmdName];
+  if (converter) {
+    if (typeof converter === 'function') {
+      return converter(args);
+    }
+    return args ? `${converter} ${args}` : converter;
+  }
+  
+  return command;
+}
+
 // 确认请求管理
 interface ConfirmRequest {
   resolve: (value: string) => void;
@@ -228,9 +265,17 @@ function wrapToolsWithConfirmation(toolRegistry: any, workspaceRoot: string): vo
       let details = '';
       
       if (toolName === 'shell_command') {
+        // 在 Windows 上转换 Linux 命令
+        let displayCommand = params.command as string;
+        if (process.platform === 'win32') {
+          displayCommand = convertLinuxToWindowsCommand(displayCommand);
+          // 同时更新 params 中的命令，这样执行时就不需要再转换
+          params.command = displayCommand;
+        }
+        
         title = '执行命令';
         description = `Allow execute command?`;
-        details = `命令: ${params.command}\n工作目录: ${params.cwd || '(默认)'}`;
+        details = `命令: ${displayCommand}\n工作目录: ${params.cwd || '(默认)'}`;
       } else if (toolName === 'skill_script') {
         title = '执行脚本';
         description = `Allow execute script ${params.skill_name}/${params.script_name}?`;

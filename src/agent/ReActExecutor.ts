@@ -21,6 +21,43 @@ export class ReActExecutor {
   private cancelled = false;
 
   /**
+   * Linux 命令到 Windows 命令的映射
+   */
+  private static readonly LINUX_TO_WINDOWS: Record<string, string | ((args: string) => string)> = {
+    'ls': (args) => args ? `dir ${args}` : 'dir',
+    'cat': (args) => `type ${args}`,
+    'rm': (args) => args.includes('-r') ? `rmdir /s /q ${args.replace(/-r[f]?\s*/g, '')}` : `del ${args.replace(/-f\s*/g, '')}`,
+    'cp': (args) => `copy ${args.replace(/-r\s*/g, '')}`,
+    'mv': (args) => `move ${args}`,
+    'mkdir': (args) => `mkdir ${args.replace(/-p\s*/g, '')}`,
+    'pwd': () => 'cd',
+    'clear': () => 'cls',
+    'touch': (args) => `type nul > ${args}`,
+    'grep': (args) => `findstr ${args}`,
+    'which': (args) => `where ${args}`,
+  };
+
+  /**
+   * 将 Linux 命令转换为 Windows 命令
+   */
+  private convertLinuxToWindows(command: string): string {
+    const trimmed = command.trim();
+    const spaceIndex = trimmed.indexOf(' ');
+    const cmdName = spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
+    const args = spaceIndex > 0 ? trimmed.substring(spaceIndex + 1).trim() : '';
+    
+    const converter = ReActExecutor.LINUX_TO_WINDOWS[cmdName];
+    if (converter) {
+      if (typeof converter === 'function') {
+        return converter(args);
+      }
+      return args ? `${converter} ${args}` : converter;
+    }
+    
+    return command;
+  }
+
+  /**
    * 带重试的 LLM 调用
    */
   private async callLLMWithRetry(
@@ -173,7 +210,12 @@ export class ReActExecutor {
       }
 
       // 发出行动事件
-      yield { type: 'action', tool: step.action.tool, params: step.action.parameters };
+      let displayParams = step.action.parameters;
+      if (step.action.tool === 'shell_command' && process.platform === 'win32' && step.action.parameters.command) {
+        const convertedCommand = this.convertLinuxToWindows(step.action.parameters.command as string);
+        displayParams = { ...step.action.parameters, command: convertedCommand };
+      }
+      yield { type: 'action', tool: step.action.tool, params: displayParams };
 
       // 执行工具
       const tool = toolRegistry.get(step.action.tool);

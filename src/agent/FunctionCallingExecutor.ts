@@ -44,6 +44,43 @@ export class FunctionCallingExecutor {
   }
 
   /**
+   * Linux 命令到 Windows 命令的映射
+   */
+  private static readonly LINUX_TO_WINDOWS: Record<string, string | ((args: string) => string)> = {
+    'ls': (args) => args ? `dir ${args}` : 'dir',
+    'cat': (args) => `type ${args}`,
+    'rm': (args) => args.includes('-r') ? `rmdir /s /q ${args.replace(/-r[f]?\s*/g, '')}` : `del ${args.replace(/-f\s*/g, '')}`,
+    'cp': (args) => `copy ${args.replace(/-r\s*/g, '')}`,
+    'mv': (args) => `move ${args}`,
+    'mkdir': (args) => `mkdir ${args.replace(/-p\s*/g, '')}`,
+    'pwd': () => 'cd',
+    'clear': () => 'cls',
+    'touch': (args) => `type nul > ${args}`,
+    'grep': (args) => `findstr ${args}`,
+    'which': (args) => `where ${args}`,
+  };
+
+  /**
+   * 将 Linux 命令转换为 Windows 命令
+   */
+  private convertLinuxToWindows(command: string): string {
+    const trimmed = command.trim();
+    const spaceIndex = trimmed.indexOf(' ');
+    const cmdName = spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
+    const args = spaceIndex > 0 ? trimmed.substring(spaceIndex + 1).trim() : '';
+    
+    const converter = FunctionCallingExecutor.LINUX_TO_WINDOWS[cmdName];
+    if (converter) {
+      if (typeof converter === 'function') {
+        return converter(args);
+      }
+      return args ? `${converter} ${args}` : converter;
+    }
+    
+    return command;
+  }
+
+  /**
    * 带重试的工具执行
    */
   private async executeToolWithRetry(
@@ -242,8 +279,15 @@ export class FunctionCallingExecutor {
 
         console.log('[FunctionCalling] 执行工具:', toolName, params);
 
+        // 对于 shell_command，在 Windows 上转换 Linux 命令用于显示
+        let displayParams = params;
+        if (toolName === 'shell_command' && process.platform === 'win32' && params.command) {
+          const convertedCommand = this.convertLinuxToWindows(params.command as string);
+          displayParams = { ...params, command: convertedCommand };
+        }
+
         // 发出行动事件（用于 UI 显示 - 可选）
-        yield { type: 'action', tool: toolName, params };
+        yield { type: 'action', tool: toolName, params: displayParams };
 
         // 执行工具
         const tool = toolRegistry.get(toolName);
