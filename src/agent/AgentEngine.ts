@@ -106,8 +106,8 @@ export class AgentEngineImpl implements IAgentEngine {
     const context = this.contextManager.getContext(8000);
 
     if (mode === 'react') {
-      // ✅ OPTIMIZATION: Check tools AND cache matched skills in one pass
-      const needsTools = this.checkToolsAndCacheSkills(message);
+      // ✅ OPTIMIZATION: Check tools AND cache matched skills in one pass (async for semantic matching)
+      const needsTools = await this.checkToolsAndCacheSkills(message);
       
       if (needsTools) {
         // Emit skill events from cached skills
@@ -148,51 +148,56 @@ export class AgentEngineImpl implements IAgentEngine {
   }
 
   /**
-   * ✅ OPTIMIZATION: Combined tool check + skill caching
+   * ✅ OPTIMIZATION: Combined tool check + skill caching (使用语义匹配)
    * This prevents Skills from being matched multiple times
+   * 
+   * 修复：先执行语义匹配，再检查 MCP 工具，确保 skills 总是被匹配
    */
-  private checkToolsAndCacheSkills(message: string): boolean {
+  private async checkToolsAndCacheSkills(message: string): Promise<boolean> {
     // Reset cache
     this.cachedMatchedSkills = [];
+    let needsTools = false;
 
-    // Check Skills first (higher priority)
+    // ✅ 先执行 Skills 语义匹配（无论是否有 MCP 工具）
     if (this.skillsManager) {
-      this.cachedMatchedSkills = this.skillsManager.matchSkills(message);
-      if (this.cachedMatchedSkills.length > 0) {
-        console.log(
-          '[AgentEngine] 检测到匹配的 Skills，启用工具模式:', 
-          this.cachedMatchedSkills.map(s => s.name)
-        );
-        return true;
+      try {
+        console.log('[AgentEngine] 开始语义匹配 Skills...');
+        this.cachedMatchedSkills = await this.skillsManager.matchSkillsSemantic(message);
+        if (this.cachedMatchedSkills.length > 0) {
+          console.log(
+            '[AgentEngine] 语义匹配到 Skills:', 
+            this.cachedMatchedSkills.map(s => s.name)
+          );
+          needsTools = true;
+        }
+      } catch (error) {
+        console.error('[AgentEngine] 语义匹配失败:', error);
       }
     }
-    
-    // Check MCP tools - 如果有 MCP 工具可用，也启用工具模式
+
+    // 检查 MCP 工具
     if (this.mcpIntegration) {
       const mcpTools = this.mcpIntegration.getMCPTools();
       const totalMCPTools = mcpTools.reduce((sum, s) => sum + s.tools.length, 0);
       if (totalMCPTools > 0) {
-        console.log(`[AgentEngine] 检测到 ${totalMCPTools} 个 MCP 工具可用，启用工具模式`);
-        console.log('[AgentEngine] MCP 工具列表:');
-        for (const { serverName, tools } of mcpTools) {
-          console.log(`  服务器 ${serverName}:`);
-          for (const tool of tools) {
-            console.log(`    - ${tool.name}: ${tool.description}`);
-          }
-        }
-        return true;
+        console.log(`[AgentEngine] 检测到 ${totalMCPTools} 个 MCP 工具可用`);
+        needsTools = true;
       }
     }
+
+    // 如果已经匹配到 skills 或有 MCP 工具，直接返回
+    if (needsTools) {
+      return true;
+    }
     
-    // Fallback to keyword detection for non-skill tool usage
+    // Fallback to keyword detection for basic tool usage (file operations only)
     const toolKeywords = [
-      '文件', '读取', '写入', '创建', '修改', '删除',
-      '搜索', '查找', '查看', '打开', '保存',
+      '文件', '读取', '写入', '创建', '删除',
+      '搜索', '查找', '打开', '保存',
       '执行', '运行', '命令', '终端', 'shell',
       'file', 'read', 'write', 'create', 'search', 'find',
       'grep', 'execute', 'run', 'command',
-      '代码', '项目', '目录', '文件夹', 'convert', '转换',
-      '文言文', '列表', '获取', '网络', '网上',
+      '目录', '文件夹',
     ];
     
     const lowerMessage = message.toLowerCase();

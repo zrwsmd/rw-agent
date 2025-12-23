@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { semanticMatcher, SkillDescription } from './SemanticMatcher';
 
 const execAsync = promisify(exec);
 
@@ -341,63 +342,50 @@ export class SkillsManager {
   }
 
   /**
-   * 根据用户消息匹配相关 skills
+   * 根据用户消息匹配相关 skills（关键词匹配 - 已废弃，保留兼容）
+   * @deprecated 使用 matchSkillsSemantic 代替
    */
   public matchSkills(userMessage: string): Skill[] {
-    const messageLower = userMessage.toLowerCase();
-    console.log('[SkillsManager] 匹配消息:', messageLower);
+    // 返回空数组，不再使用关键词匹配
+    console.log('[SkillsManager] matchSkills 已废弃，请使用 matchSkillsSemantic');
+    return [];
+  }
+
+  /**
+   * 根据用户消息语义匹配相关 skills（向量语义匹配）
+   */
+  public async matchSkillsSemantic(userMessage: string): Promise<Skill[]> {
+    console.log('[SkillsManager] 语义匹配消息:', userMessage.slice(0, 100));
     console.log('[SkillsManager] 可用 skills:', Array.from(this.skills.keys()));
-    
-    // 提取用户消息中的词（英文按空格/标点分割，中文按连续字符）
-    const messageWords = new Set<string>();
-    // 英文词（只保留长度 >= 3 的）
-    const englishWords = messageLower.match(/[a-z][a-z0-9]*/g) || [];
-    englishWords.filter(w => w.length >= 3).forEach(w => messageWords.add(w));
-    // 中文词组（只保留长度 >= 2 的）
-    const chineseWords = messageLower.match(/[\u4e00-\u9fa5]+/g) || [];
-    chineseWords.filter(w => w.length >= 2).forEach(w => messageWords.add(w));
-    
-    console.log('[SkillsManager] 用户消息词汇:', Array.from(messageWords));
-    
-    const matched: Skill[] = [];
-    
-    for (const skill of this.skills.values()) {
-      let matchedKeyword: string | null = null;
-      
-      for (const keyword of skill.keywords) {
-        const kw = keyword.toLowerCase();
-        const isChinese = /[\u4e00-\u9fa5]/.test(kw);
-        const minLen = isChinese ? 2 : 3;
-        
-        if (kw.length < minLen) continue;
-        
-        // 英文：完整词匹配
-        if (!isChinese && messageWords.has(kw)) {
-          matchedKeyword = kw;
-          break;
-        }
-        
-        // 中文：检查用户消息的中文词是否包含关键词
-        if (isChinese) {
-          for (const word of messageWords) {
-            if (/[\u4e00-\u9fa5]/.test(word) && word.includes(kw)) {
-              matchedKeyword = kw;
-              break;
-            }
-          }
-          if (matchedKeyword) break;
-        }
-      }
-      
-      console.log('[SkillsManager] Skill:', skill.name, '关键词:', skill.keywords.slice(0, 5), '匹配词:', matchedKeyword);
-      
-      if (matchedKeyword) {
-        matched.push(skill);
-      }
+
+    const allSkills = this.getAllSkills();
+    if (allSkills.length === 0) {
+      return [];
     }
-    
-    console.log('[SkillsManager] 匹配结果:', matched.map(s => s.name));
-    return matched;
+
+    // 转换为 SkillDescription 格式
+    const skillDescriptions: SkillDescription[] = allSkills.map(s => ({
+      name: s.name,
+      description: s.config.description || '',
+      keywords: s.keywords,
+    }));
+
+    try {
+      const result = await semanticMatcher.match(userMessage, skillDescriptions);
+      
+      if (result.skill) {
+        const matchedSkill = this.skills.get(result.skill.name);
+        if (matchedSkill) {
+          console.log(`[SkillsManager] 语义匹配成功: ${matchedSkill.name}, 相似度: ${result.similarity.toFixed(3)}`);
+          return [matchedSkill];
+        }
+      }
+    } catch (error) {
+      console.error('[SkillsManager] 语义匹配失败:', error);
+    }
+
+    console.log('[SkillsManager] 语义匹配结果: 无匹配');
+    return [];
   }
 
   /**
