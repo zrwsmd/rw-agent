@@ -49,7 +49,11 @@ export type UIMessage =
   | { type: 'mcp_server_status_changed'; status: any }
   | { type: 'save_input_text'; text: string }
   | { type: 'restore_input_text'; text: string }
-  | { type: 'sync_processing_state'; isProcessing: boolean };
+  | { type: 'sync_processing_state'; isProcessing: boolean }
+  | { type: 'get_templates' }
+  | { type: 'templates_list'; templates: Array<{ id: string; name: string; icon: string; description: string; category: string }> }
+  | { type: 'use_template'; templateId: string }
+  | { type: 'template_content'; content: string };
 
 /**
  * 聊天面板提供者
@@ -1599,6 +1603,134 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     .diff-btn-primary:hover {
       background: var(--vscode-button-hoverBackground);
     }
+    
+    /* 提示词模板面板样式 */
+    .template-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 350;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(2px);
+    }
+    .template-overlay.show {
+      display: flex;
+    }
+    .template-panel {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+    }
+    .template-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      background: var(--vscode-sideBar-background);
+    }
+    .template-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    .template-close {
+      background: transparent;
+      border: none;
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      font-size: 18px;
+      opacity: 0.7;
+      transition: all 0.2s;
+    }
+    .template-close:hover {
+      opacity: 1;
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .template-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .template-section {
+      margin-bottom: 20px;
+    }
+    .template-section:last-child {
+      margin-bottom: 0;
+    }
+    .template-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }
+    .template-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .template-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .template-item:hover {
+      background: var(--vscode-list-hoverBackground);
+      border-color: var(--vscode-focusBorder);
+      transform: translateX(4px);
+    }
+    .template-item-icon {
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .template-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .template-item-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--vscode-foreground);
+      margin-bottom: 2px;
+    }
+    .template-item-desc {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .template-item-arrow {
+      color: var(--vscode-descriptionForeground);
+      font-size: 14px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .template-item:hover .template-item-arrow {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -1636,6 +1768,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     <div class="input-wrapper">
       <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
       <button class="upload-btn" id="uploadBtn" title="上传图片 (或 Ctrl+V 粘贴)">📷</button>
+      <button class="upload-btn" id="templateBtn" title="提示词模板">📝</button>
       <textarea id="input" placeholder="输入消息，按 Enter 发送，Ctrl+V 粘贴图片..." rows="1"></textarea>
       <button class="send-btn" id="sendBtn">发送</button>
       <button class="cancel-btn" id="cancelBtn">⏹ 停止</button>
@@ -1791,6 +1924,26 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       <div class="settings-footer">
         <button class="settings-btn settings-btn-secondary" id="mcpRefreshBtn">🔄 刷新</button>
         <button class="settings-btn settings-btn-primary" id="mcpCloseBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提示词模板面板 -->
+  <div class="template-overlay" id="templateOverlay">
+    <div class="template-panel">
+      <div class="template-header">
+        <div class="template-title">📝 提示词模板</div>
+        <button class="template-close" id="templateClose">×</button>
+      </div>
+      <div class="template-body">
+        <div class="template-section">
+          <div class="template-section-title">内置模板</div>
+          <div class="template-list" id="builtinTemplates"></div>
+        </div>
+        <div class="template-section" id="customTemplatesSection" style="display: none;">
+          <div class="template-section-title">自定义模板</div>
+          <div class="template-list" id="customTemplates"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -3008,6 +3161,92 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           vscode.postMessage({ type: 'mcp_open_config' });
         };
       }
+
+      // 提示词模板功能
+      var templateBtn = document.getElementById('templateBtn');
+      var templateOverlay = document.getElementById('templateOverlay');
+      var templateClose = document.getElementById('templateClose');
+      var builtinTemplates = document.getElementById('builtinTemplates');
+      var customTemplates = document.getElementById('customTemplates');
+      var customTemplatesSection = document.getElementById('customTemplatesSection');
+      
+      function renderTemplates(templates) {
+        var builtinHtml = '';
+        var customHtml = '';
+        
+        for (var i = 0; i < templates.length; i++) {
+          var t = templates[i];
+          var html = '<div class="template-item" data-template-id="' + t.id + '">' +
+            '<span class="template-item-icon">' + t.icon + '</span>' +
+            '<div class="template-item-info">' +
+              '<div class="template-item-name">' + t.name + '</div>' +
+              '<div class="template-item-desc">' + t.description + '</div>' +
+            '</div>' +
+            '<span class="template-item-arrow">→</span>' +
+          '</div>';
+          
+          if (t.category === 'builtin') {
+            builtinHtml += html;
+          } else {
+            customHtml += html;
+          }
+        }
+        
+        builtinTemplates.innerHTML = builtinHtml || '<div class="loading-text">暂无内置模板</div>';
+        
+        if (customHtml) {
+          customTemplates.innerHTML = customHtml;
+          customTemplatesSection.style.display = 'block';
+        } else {
+          customTemplatesSection.style.display = 'none';
+        }
+        
+        // 绑定点击事件
+        var items = templateOverlay.querySelectorAll('.template-item');
+        for (var j = 0; j < items.length; j++) {
+          items[j].onclick = function() {
+            var templateId = this.getAttribute('data-template-id');
+            vscode.postMessage({ type: 'use_template', templateId: templateId });
+            templateOverlay.classList.remove('show');
+          };
+        }
+      }
+      
+      if (templateBtn) {
+        templateBtn.onclick = function() {
+          console.log('[ChatPanel] Template button clicked');
+          vscode.postMessage({ type: 'get_templates' });
+          templateOverlay.classList.add('show');
+        };
+      }
+      
+      if (templateClose) {
+        templateClose.onclick = function() {
+          templateOverlay.classList.remove('show');
+        };
+      }
+      
+      if (templateOverlay) {
+        templateOverlay.onclick = function(e) {
+          if (e.target === templateOverlay) {
+            templateOverlay.classList.remove('show');
+          }
+        };
+      }
+      
+      // 处理模板消息
+      window.addEventListener('message', function(event) {
+        var message = event.data;
+        if (message.type === 'templates_list') {
+          renderTemplates(message.templates);
+        } else if (message.type === 'template_content') {
+          // 将模板内容填充到输入框
+          inputEl.value = message.content;
+          inputEl.focus();
+          // 触发 input 事件以保存文本
+          inputEl.dispatchEvent(new Event('input'));
+        }
+      });
 
       /*
       var mcpTabInstalled = document.getElementById('mcpTabInstalled');

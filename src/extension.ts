@@ -11,6 +11,7 @@ import { ConversationStorage, createConversationStorage } from './storage';
 import { Conversation } from './types/conversation';
 import { MCPIntegration, createMCPIntegration } from './mcp';
 import { setMCPConfirmCallback } from './tools/MCPTool';
+import { createPromptTemplateManager, PromptTemplateManager } from './templates';
 
 let agentEngine: AgentEngineImpl | null = null;
 let currentMode: AgentMode = 'react';
@@ -20,6 +21,7 @@ let currentConversation: Conversation | null = null;
 let mcpIntegration: MCPIntegration | null = null;
 let extensionContext: vscode.ExtensionContext | null = null;
 let isProcessing = false; // ✅ 跟踪当前是否正在处理消息
+let promptTemplateManager: PromptTemplateManager | null = null;
 
 /**
  * Linux 命令到 Windows 命令的映射
@@ -487,6 +489,14 @@ export function activate(context: vscode.ExtensionContext) {
         // 保存输入框文本到 extension state
         context.workspaceState.update('inputText', message.text);
         break;
+
+      case 'get_templates':
+        await handleGetTemplates();
+        break;
+
+      case 'use_template':
+        await handleUseTemplate(message.templateId);
+        break;
     }
   });
 
@@ -533,6 +543,25 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  // 注册右键菜单命令
+  const templateCommands = [
+    { command: 'vscode-agent.codeReview', templateId: 'code-review' },
+    { command: 'vscode-agent.explainCode', templateId: 'explain-code' },
+    { command: 'vscode-agent.writeTests', templateId: 'write-tests' },
+    { command: 'vscode-agent.refactorCode', templateId: 'refactor' },
+    { command: 'vscode-agent.addComments', templateId: 'add-comments' },
+    { command: 'vscode-agent.fixBug', templateId: 'fix-bug' },
+    { command: 'vscode-agent.optimizeCode', templateId: 'optimize' },
+  ];
+
+  for (const { command, templateId } of templateCommands) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(command, async () => {
+        await executeTemplateCommand(templateId, context);
+      })
+    );
+  }
 
   // 初始化 agent
   initializeAgent(context);
@@ -1118,6 +1147,132 @@ async function handleMCPOpenConfig(): Promise<void> {
     console.error('[Extension] 打开 MCP 配置文件失败:', error);
     vscode.window.showErrorMessage(`打开配置文件失败: ${error instanceof Error ? error.message : '未知错误'}`);
   }
+}
+
+/**
+ * 处理获取模板列表请求
+ */
+async function handleGetTemplates(): Promise<void> {
+  if (!promptTemplateManager) {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+    promptTemplateManager = createPromptTemplateManager(workspaceRoot);
+  }
+
+  const templates = promptTemplateManager.getAllTemplates();
+  chatPanelProvider?.postMessage({
+    type: 'templates_list',
+    templates: templates.map(t => ({
+      id: t.id,
+      name: t.name,
+      icon: t.icon,
+      description: t.description,
+      category: t.category,
+    })),
+  });
+}
+
+/**
+ * 处理使用模板请求
+ */
+async function handleUseTemplate(templateId: string): Promise<void> {
+  if (!promptTemplateManager) {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+    promptTemplateManager = createPromptTemplateManager(workspaceRoot);
+  }
+
+  const template = promptTemplateManager.getTemplate(templateId);
+  if (!template) {
+    console.error('[Extension] 模板未找到:', templateId);
+    return;
+  }
+
+  // 获取变量值
+  const variables: Record<string, string> = {};
+  
+  // 获取当前选中的代码
+  const editor = vscode.window.activeTextEditor;
+  if (editor) {
+    const selection = editor.selection;
+    const selectedText = editor.document.getText(selection);
+    variables['selected_code'] = selectedText || '// 请选择代码';
+    variables['file_name'] = editor.document.fileName.split(/[/\\]/).pop() || '';
+    variables['file_extension'] = editor.document.languageId || '';
+  } else {
+    variables['selected_code'] = '// 请选择代码';
+    variables['file_name'] = '';
+    variables['file_extension'] = '';
+  }
+
+  // 获取剪贴板内容
+  try {
+    const clipboardText = await vscode.env.clipboard.readText();
+    variables['clipboard'] = clipboardText || '';
+  } catch {
+    variables['clipboard'] = '';
+  }
+
+  // 填充模板
+  const content = promptTemplateManager.fillTemplate(template, variables);
+  
+  chatPanelProvider?.postMessage({
+    type: 'template_content',
+    content: content,
+  });
+}
+
+/**
+ * 执行右键菜单模板命令 - 直接发送给 AI
+ */
+async function executeTemplateCommand(templateId: string, context: vscode.ExtensionContext): Promise<void> {
+  if (!promptTemplateManager) {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+    promptTemplateManager = createPromptTemplateManager(workspaceRoot);
+  }
+
+  const template = promptTemplateManager.getTemplate(templateId);
+  if (!template) {
+    vscode.window.showErrorMessage('模板未找到');
+    return;
+  }
+
+  // 获取选中的代码
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showWarningMessage('请先打开一个文件');
+    return;
+  }
+
+  const selection = editor.selection;
+  const selectedText = editor.document.getText(selection);
+  
+  if (!selectedText) {
+    vscode.window.showWarningMessage('请先选中代码');
+    return;
+  }
+
+  // 获取变量值
+  const variables: Record<string, string> = {
+    selected_code: selectedText,
+    file_name: editor.document.fileName.split(/[/\\]/).pop() || '',
+    file_extension: editor.document.languageId || '',
+    clipboard: '',
+  };
+
+  // 获取剪贴板内容
+  try {
+    variables['clipboard'] = await vscode.env.clipboard.readText() || '';
+  } catch {
+    // ignore
+  }
+
+  // 填充模板
+  const content = promptTemplateManager.fillTemplate(template, variables);
+
+  // 确保聊天面板可见
+  await vscode.commands.executeCommand('vscode-agent.chatPanel.focus');
+
+  // 直接发送消息给 AI
+  await handleUserMessage(content, context);
 }
 
 export function deactivate() {

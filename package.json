@@ -87,6 +87,86 @@
         "command": "vscode-agent.setApiKey",
         "title": "设置 API 密钥",
         "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.codeReview",
+        "title": "🔍 代码审查",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.explainCode",
+        "title": "📖 解释代码",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.writeTests",
+        "title": "🧪 写单元测试",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.refactorCode",
+        "title": "♻️ 重构建议",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.addComments",
+        "title": "💬 添加注释",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.fixBug",
+        "title": "🐛 修复 Bug",
+        "category": "Agent"
+      },
+      {
+        "command": "vscode-agent.optimizeCode",
+        "title": "⚡ 性能优化",
+        "category": "Agent"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "vscode-agent.submenu",
+          "group": "vscode-agent@1",
+          "when": "editorHasSelection"
+        }
+      ],
+      "vscode-agent.submenu": [
+        {
+          "command": "vscode-agent.codeReview",
+          "group": "1_analyze@1"
+        },
+        {
+          "command": "vscode-agent.explainCode",
+          "group": "1_analyze@2"
+        },
+        {
+          "command": "vscode-agent.writeTests",
+          "group": "2_generate@1"
+        },
+        {
+          "command": "vscode-agent.addComments",
+          "group": "2_generate@2"
+        },
+        {
+          "command": "vscode-agent.refactorCode",
+          "group": "3_improve@1"
+        },
+        {
+          "command": "vscode-agent.optimizeCode",
+          "group": "3_improve@2"
+        },
+        {
+          "command": "vscode-agent.fixBug",
+          "group": "3_improve@3"
+        }
+      ]
+    },
+    "submenus": [
+      {
+        "id": "vscode-agent.submenu",
+        "label": "🤖 Agent"
       }
     ]
   },
