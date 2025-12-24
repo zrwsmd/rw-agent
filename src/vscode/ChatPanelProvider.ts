@@ -21,9 +21,9 @@ export type UIMessage =
   | { type: 'cancel' }
   | { type: 'set_mode'; mode: AgentMode }
   | { type: 'open_settings' }
-  | { type: 'save_settings'; provider: string; apiKey: string; model: string }
-  | { type: 'get_current_settings' }
-  | { type: 'current_settings'; provider: string; model: string; hasApiKey: boolean }
+    | { type: 'save_settings'; provider: string; apiKey: string; model: string; baseUrl?: string }
+    | { type: 'get_current_settings' }
+    | { type: 'current_settings'; provider: string; model: string; hasApiKey: boolean; baseUrl?: string }
   | { type: 'ready' }
   | { type: 'new_conversation' }
   | { type: 'load_conversation'; id: string }
@@ -1942,12 +1942,18 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           <div class="settings-section-title">API 配置</div>
           <div class="settings-field">
             <label class="settings-label">LLM 提供商</label>
-            <select class="settings-select" id="providerSelect">
-              <option value="gemini">Google Gemini</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic Claude</option>
-            </select>
-          </div>
+              <select class="settings-select" id="providerSelect">
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI</option>
+                <option value="bailian">阿里百炼 (DeepSeek/Kimi)</option>
+                <option value="anthropic">Anthropic Claude</option>
+              </select>
+            </div>
+            <div class="settings-field" id="baseUrlField" style="display:none">
+              <label class="settings-label">Base URL</label>
+              <input type="text" class="settings-input" id="baseUrlInput" placeholder="https://api.openai.com/v1">
+              <div class="settings-hint">自定义 API 基础路径</div>
+            </div>
           <div class="settings-field">
             <label class="settings-label">API 密钥</label>
             <input type="password" class="settings-input" id="apiKeyInput" placeholder="输入 API 密钥...">
@@ -2541,99 +2547,129 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         console.error('[ChatPanel] Send button not found!');
       }
       
-      // 设置面板元素
-      var settingsOverlay = document.getElementById('settingsOverlay');
-      var settingsClose = document.getElementById('settingsClose');
-      var settingsCancel = document.getElementById('settingsCancel');
-      var settingsSave = document.getElementById('settingsSave');
-      var providerSelect = document.getElementById('providerSelect');
-      var apiKeyInput = document.getElementById('apiKeyInput');
-      var modelSelect = document.getElementById('modelSelect');
-      
-      // 模型选项配置
-      var modelOptions = {
-        gemini: [
-          { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
-          { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
-          { value: 'gemini-3-flash-preview', label: 'gemini-3-flash-preview' },
-          { value: 'gemini-3-pro-preview', label: 'gemini-3-pro-preview' },
-          { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
-          { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
-          { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro' }
-        ],
-        openai: [],
-        anthropic: []
-      };
-      
-      function updateModelOptions(provider) {
-        modelSelect.innerHTML = '';
-        var options = modelOptions[provider] || modelOptions.gemini;
-        for (var i = 0; i < options.length; i++) {
-          var opt = document.createElement('option');
-          opt.value = options[i].value;
-          opt.textContent = options[i].label;
-          modelSelect.appendChild(opt);
-        }
-      }
-      
-      providerSelect.onchange = function() {
-        updateModelOptions(providerSelect.value);
-      };
-      
-      if (settingsBtn) {
-        settingsBtn.onclick = function() {
-          console.log('[ChatPanel] Settings button clicked');
-          // 请求当前设置
-          vscode.postMessage({ type: 'get_current_settings' });
-          settingsOverlay.classList.add('show');
+        // 设置面板元素
+        var settingsOverlay = document.getElementById('settingsOverlay');
+        var settingsClose = document.getElementById('settingsClose');
+        var settingsCancel = document.getElementById('settingsCancel');
+        var settingsSave = document.getElementById('settingsSave');
+        var providerSelect = document.getElementById('providerSelect');
+        var apiKeyInput = document.getElementById('apiKeyInput');
+        var modelSelect = document.getElementById('modelSelect');
+        var baseUrlField = document.getElementById('baseUrlField');
+        var baseUrlInput = document.getElementById('baseUrlInput');
+        
+        // 模型选项配置
+        var modelOptions = {
+          gemini: [
+            { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
+            { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
+            { value: 'gemini-3-flash-preview', label: 'gemini-3-flash-preview' },
+            { value: 'gemini-3-pro-preview', label: 'gemini-3-pro-preview' },
+            { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
+            { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
+            { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro' }
+          ],
+          openai: [
+            { value: 'gpt-4o', label: 'gpt-4o (推荐)' },
+            { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+            { value: 'o1-preview', label: 'o1-preview' },
+            { value: 'o1-mini', label: 'o1-mini' }
+          ],
+          bailian: [
+            { value: 'deepseek-v3', label: 'DeepSeek-V3' },
+            { value: 'deepseek-r1', label: 'DeepSeek-R1' },
+            { value: 'qwen-max', label: 'Qwen-Max' },
+            { value: 'qwen-plus', label: 'Qwen-Plus' },
+            { value: 'qwen-turbo', label: 'Qwen-Turbo' }
+          ],
+          anthropic: [
+            { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+            { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+            { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' }
+          ]
         };
-        console.log('[ChatPanel] Settings button event bound');
-      } else {
-        console.error('[ChatPanel] Settings button not found!');
-      }
-      
-      settingsClose.onclick = function() {
-        settingsOverlay.classList.remove('show');
-      };
-      
-      settingsCancel.onclick = function() {
-        settingsOverlay.classList.remove('show');
-      };
-      
-      settingsOverlay.onclick = function(e) {
-        if (e.target === settingsOverlay) {
-          settingsOverlay.classList.remove('show');
+        
+        function updateModelOptions(provider) {
+          modelSelect.innerHTML = '';
+          var options = modelOptions[provider] || modelOptions.gemini;
+          for (var i = 0; i < options.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = options[i].value;
+            opt.textContent = options[i].label;
+            modelSelect.appendChild(opt);
+          }
+          
+          // 显示/隐藏 Base URL 字段
+          if (provider === 'openai' || provider === 'bailian') {
+            baseUrlField.style.display = 'block';
+            if (provider === 'bailian' && !baseUrlInput.value) {
+              baseUrlInput.value = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+            }
+          } else {
+            baseUrlField.style.display = 'none';
+          }
         }
-      };
-      
-      settingsSave.onclick = function() {
-        var provider = providerSelect.value;
-        var apiKey = apiKeyInput.value.trim();
-        var model = modelSelect.value;
         
-        // 检查是否已有 API Key
-        var apiKeyStatus = document.getElementById('apiKeyStatus');
-        var hasExistingKey = apiKeyStatus.classList.contains('set');
+        providerSelect.onchange = function() {
+          updateModelOptions(providerSelect.value);
+        };
         
-        if (apiKey || hasExistingKey) {
-          vscode.postMessage({ 
-            type: 'save_settings', 
-            provider: provider,
-            apiKey: apiKey, // 如果为空但有现有密钥，后端会保持现有密钥
-            model: model
-          });
-          apiKeyInput.value = '';
-          settingsOverlay.classList.remove('show');
+        if (settingsBtn) {
+          settingsBtn.onclick = function() {
+            console.log('[ChatPanel] Settings button clicked');
+            // 请求当前设置
+            vscode.postMessage({ type: 'get_current_settings' });
+            settingsOverlay.classList.add('show');
+          };
+          console.log('[ChatPanel] Settings button event bound');
         } else {
-          // 提示用户输入密钥
-          apiKeyInput.style.borderColor = 'var(--vscode-errorForeground)';
-          apiKeyInput.placeholder = '请输入 API 密钥！';
-          setTimeout(function() {
-            apiKeyInput.style.borderColor = '';
-            apiKeyInput.placeholder = '输入 API 密钥...';
-          }, 2000);
+          console.error('[ChatPanel] Settings button not found!');
         }
-      };
+        
+        settingsClose.onclick = function() {
+          settingsOverlay.classList.remove('show');
+        };
+        
+        settingsCancel.onclick = function() {
+          settingsOverlay.classList.remove('show');
+        };
+        
+        settingsOverlay.onclick = function(e) {
+          if (e.target === settingsOverlay) {
+            settingsOverlay.classList.remove('show');
+          }
+        };
+        
+        settingsSave.onclick = function() {
+          var provider = providerSelect.value;
+          var apiKey = apiKeyInput.value.trim();
+          var model = modelSelect.value;
+          var baseUrl = baseUrlInput.value.trim();
+          
+          // 检查是否已有 API Key
+          var apiKeyStatus = document.getElementById('apiKeyStatus');
+          var hasExistingKey = apiKeyStatus.classList.contains('set');
+          
+          if (apiKey || hasExistingKey) {
+            vscode.postMessage({ 
+              type: 'save_settings', 
+              provider: provider,
+              apiKey: apiKey, // 如果为空但有现有密钥，后端会保持现有密钥
+              model: model,
+              baseUrl: baseUrl
+            });
+            apiKeyInput.value = '';
+            settingsOverlay.classList.remove('show');
+          } else {
+            // 提示用户输入密钥
+            apiKeyInput.style.borderColor = 'var(--vscode-errorForeground)';
+            apiKeyInput.placeholder = '请输入 API 密钥！';
+            setTimeout(function() {
+              apiKeyInput.style.borderColor = '';
+              apiKeyInput.placeholder = '输入 API 密钥...';
+            }, 2000);
+          }
+        };
       
       // 新建对话按钮
       var newChatBtn = document.getElementById('newChatBtn');
@@ -2955,13 +2991,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.content, msg.content);
             }
           });
-        } else if (message.type === 'current_settings') {
-          // 更新设置面板的当前值
-          providerSelect.value = message.provider;
-          updateModelOptions(message.provider);
-          modelSelect.value = message.model;
-          
-          // 更新 API Key 状态显示
+          } else if (message.type === 'current_settings') {
+            // 更新设置面板的当前值
+            providerSelect.value = message.provider;
+            updateModelOptions(message.provider);
+            modelSelect.value = message.model;
+            if (message.baseUrl) {
+              baseUrlInput.value = message.baseUrl;
+            }
+            
+            // 更新 API Key 状态显示
           var apiKeyStatus = document.getElementById('apiKeyStatus');
           if (message.hasApiKey) {
             apiKeyStatus.className = 'api-key-status set';

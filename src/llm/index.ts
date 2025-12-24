@@ -13,6 +13,7 @@ import { GeminiProvider } from './GeminiAdapter';
  */
 const providers: Record<string, LLMProvider> = {
   openai: new OpenAIProvider(),
+  bailian: new OpenAIProvider(),
   anthropic: new AnthropicProvider(),
   gemini: new GeminiProvider(),
 };

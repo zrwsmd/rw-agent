@@ -451,9 +451,9 @@ export function activate(context: vscode.ExtensionContext) {
         await handleGetCurrentSettings(context);
         break;
 
-      case 'save_settings':
-        await handleSaveSettings(message.provider, message.apiKey, message.model, context);
-        break;
+        case 'save_settings':
+          await handleSaveSettings(message.provider, message.apiKey, message.model, context, message.baseUrl);
+          break;
 
       case 'mcp_list_servers':
         await handleMCPListServers();
@@ -873,6 +873,7 @@ async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promi
     const config = vscode.workspace.getConfiguration('vscode-agent');
     const provider = config.get<string>('llm.provider') || 'gemini';
     const model = config.get<string>('llm.model') || 'gemini-2.0-flash';
+    const baseUrl = config.get<string>('llm.baseUrl') || undefined;
 
     // 检查 API 密钥是否存在
     const apiKey = await context.secrets.get(`${provider}-api-key`);
@@ -884,6 +885,7 @@ async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promi
       provider,
       model,
       hasApiKey,
+      baseUrl,
     });
   } catch (error) {
     console.error('[Extension] 获取当前设置失败:', error);
@@ -897,7 +899,8 @@ async function handleSaveSettings(
   provider: string,
   apiKey: string,
   model: string,
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  baseUrl?: string
 ): Promise<void> {
   try {
     // 只有在提供了新的 API 密钥时才保存
@@ -910,6 +913,9 @@ async function handleSaveSettings(
     await config.update('llm.provider', provider, vscode.ConfigurationTarget.Global);
     if (model) {
       await config.update('llm.model', model, vscode.ConfigurationTarget.Global);
+    }
+    if (baseUrl !== undefined) {
+      await config.update('llm.baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
     }
 
     vscode.window.showInformationMessage(`✅ ${provider} 设置已保存`);
