@@ -2633,6 +2633,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             { value: 'qwen2.5-math-1.5b-instruct', label: 'Qwen2.5-Math-1.5B (数学)' },
             
             // DeepSeek系列
+            { value: 'deepseek-v3.2-exp', label: 'DeepSeek-V3.2-Exp' },
             { value: 'deepseek-v3.2', label: 'DeepSeek-V3.2' },
             { value: 'deepseek-v3', label: 'DeepSeek-V3' },
             { value: 'deepseek-r1', label: 'DeepSeek-R1' },

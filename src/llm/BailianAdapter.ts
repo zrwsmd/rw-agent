@@ -53,7 +53,7 @@ export class BailianAdapter extends OpenAIAdapter {
       'qwen2.5-math-72b-instruct', 'qwen2.5-math-7b-instruct', 'qwen2.5-math-1.5b-instruct',
       
       // DeepSeek系列
-      'deepseek-v3.2', 'deepseek-v3', 'deepseek-r1', 'deepseek-chat', 'deepseek-coder',
+      'deepseek-v3.2-exp', 'deepseek-v3.2', 'deepseek-v3', 'deepseek-r1', 'deepseek-chat', 'deepseek-coder',
       
       // 其他开源模型
       'llama3.1-405b-instruct', 'llama3.1-70b-instruct', 'llama3.1-8b-instruct',
@@ -155,7 +155,7 @@ export class BailianProvider implements LLMProvider {
       'qwen3-coder-plus', 'qwen-coder-plus',
       'qwen2.5-72b-instruct', 'qwen2.5-32b-instruct', 'qwen2.5-14b-instruct',
       'qwen2.5-coder-32b-instruct', 'qwen2.5-math-72b-instruct',
-      'deepseek-v3.2', 'deepseek-v3', 'deepseek-r1', 'llama3.1-405b-instruct'
+      'deepseek-v3.2-exp', 'deepseek-v3.2', 'deepseek-v3', 'deepseek-r1', 'llama3.1-405b-instruct'
     ];
   }
 
