@@ -2604,44 +2604,23 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           bailian: [
             // 通义千问系列
             { value: 'qwen-max', label: 'Qwen-Max (最强推理)' },
-            { value: 'qwen-max-0428', label: 'Qwen-Max-0428' },
-            { value: 'qwen-max-0403', label: 'Qwen-Max-0403' },
-            { value: 'qwen-max-0107', label: 'Qwen-Max-0107' },
             { value: 'qwen-max-longcontext', label: 'Qwen-Max-Longcontext (长文本)' },
             { value: 'qwen-plus', label: 'Qwen-Plus (平衡性能)' },
-            { value: 'qwen-plus-0828', label: 'Qwen-Plus-0828' },
-            { value: 'qwen-plus-0723', label: 'Qwen-Plus-0723' },
             { value: 'qwen-turbo', label: 'Qwen-Turbo (快速响应)' },
-            { value: 'qwen-turbo-0624', label: 'Qwen-Turbo-0624' },
-            { value: 'qwen-turbo-0206', label: 'Qwen-Turbo-0206' },
+            
+            // 全模态模型系列
+            { value: 'qwen3-omni-flash-2025-12-01', label: 'Qwen3-Omni-Flash-2025-12-01 (全模态)' },
+            { value: 'qwen-omni-turbo', label: 'Qwen-Omni-Turbo (全模态)' },
+            { value: 'qwen-omni-turbo-realtime', label: 'Qwen-Omni-Turbo-Realtime (全模态)' },
+            { value: 'qwen-omni-turbo-realtime-latest', label: 'Qwen-Omni-Turbo-Realtime-Latest (全模态)' },
             
             // 通义千问2.5系列
             { value: 'qwen2.5-72b-instruct', label: 'Qwen2.5-72B-Instruct' },
-            { value: 'qwen2.5-32b-instruct', label: 'Qwen2.5-32B-Instruct' },
-            { value: 'qwen2.5-14b-instruct', label: 'Qwen2.5-14B-Instruct' },
-            { value: 'qwen2.5-7b-instruct', label: 'Qwen2.5-7B-Instruct' },
-            { value: 'qwen2.5-3b-instruct', label: 'Qwen2.5-3B-Instruct' },
-            { value: 'qwen2.5-1.5b-instruct', label: 'Qwen2.5-1.5B-Instruct' },
-            { value: 'qwen2.5-0.5b-instruct', label: 'Qwen2.5-0.5B-Instruct' },
             
-            // 通义千问2系列
-            { value: 'qwen2-72b-instruct', label: 'Qwen2-72B-Instruct' },
-            { value: 'qwen2-57b-a14b-instruct', label: 'Qwen2-57B-A14B-Instruct' },
-            { value: 'qwen2-7b-instruct', label: 'Qwen2-7B-Instruct' },
-            { value: 'qwen2-1.5b-instruct', label: 'Qwen2-1.5B-Instruct' },
-            { value: 'qwen2-0.5b-instruct', label: 'Qwen2-0.5B-Instruct' },
-            
-            // 通义千问1.5系列
-            { value: 'qwen1.5-110b-chat', label: 'Qwen1.5-110B-Chat' },
-            { value: 'qwen1.5-72b-chat', label: 'Qwen1.5-72B-Chat' },
-            { value: 'qwen1.5-32b-chat', label: 'Qwen1.5-32B-Chat' },
-            { value: 'qwen1.5-14b-chat', label: 'Qwen1.5-14B-Chat' },
-            { value: 'qwen1.5-7b-chat', label: 'Qwen1.5-7B-Chat' },
-            { value: 'qwen1.5-4b-chat', label: 'Qwen1.5-4B-Chat' },
-            { value: 'qwen1.5-1.8b-chat', label: 'Qwen1.5-1.8B-Chat' },
-            { value: 'qwen1.5-0.5b-chat', label: 'Qwen1.5-0.5B-Chat' },
-            
+    
             // 代码专用模型
+            { value: 'qwen3-coder-plus', label: 'Qwen3-Coder-Plus (代码)' },
+            { value: 'qwen-coder-plus', label: 'Qwen-Coder-Plus (代码)' },
             { value: 'qwen2.5-coder-32b-instruct', label: 'Qwen2.5-Coder-32B (代码)' },
             { value: 'qwen2.5-coder-14b-instruct', label: 'Qwen2.5-Coder-14B (代码)' },
             { value: 'qwen2.5-coder-7b-instruct', label: 'Qwen2.5-Coder-7B (代码)' },
@@ -2654,6 +2633,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             { value: 'qwen2.5-math-1.5b-instruct', label: 'Qwen2.5-Math-1.5B (数学)' },
             
             // DeepSeek系列
+            { value: 'deepseek-v3.2', label: 'DeepSeek-V3.2' },
             { value: 'deepseek-v3', label: 'DeepSeek-V3' },
             { value: 'deepseek-r1', label: 'DeepSeek-R1' },
             { value: 'deepseek-chat', label: 'DeepSeek-Chat' },
