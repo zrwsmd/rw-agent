@@ -147,8 +147,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data: ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' https://slelguoygbfzlpylpxfs.supabase.co; connect-src https://slelguoygbfzlpylpxfs.supabase.co; img-src data: ${webview.cspSource};">
   <title>Agent Chat</title>
+  <script nonce="${nonce}" id="orchids-browser-logs" src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/scripts/orchids-browser-logs.js" data-orchids-project-id="bcbd37fb-db6d-43e5-8fa2-7b529810a565"></script>
   <style>
     :root {
       --radius: 8px;
