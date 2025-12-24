@@ -1,7 +1,0 @@
-{
-  "projectId": "bcbd37fb-db6d-43e5-8fa2-7b529810a565",
-  "createdAt": 1735048380000,
-  "startupCommands": [
-    "bun run watch"
-  ]
-}
