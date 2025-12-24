@@ -12,6 +12,7 @@ import { Conversation } from './types/conversation';
 import { MCPIntegration, createMCPIntegration } from './mcp';
 import { setMCPConfirmCallback } from './tools/MCPTool';
 import { createPromptTemplateManager, PromptTemplateManager } from './templates';
+import { createQuickCommandManager, QuickCommandManager, CommandContext } from './commands';
 
 let agentEngine: AgentEngineImpl | null = null;
 let currentMode: AgentMode = 'react';
@@ -22,6 +23,7 @@ let mcpIntegration: MCPIntegration | null = null;
 let extensionContext: vscode.ExtensionContext | null = null;
 let isProcessing = false; // ✅ 跟踪当前是否正在处理消息
 let promptTemplateManager: PromptTemplateManager | null = null;
+let quickCommandManager: QuickCommandManager | null = null;
 
 /**
  * Linux 命令到 Windows 命令的映射
@@ -48,7 +50,7 @@ function convertLinuxToWindowsCommand(command: string): string {
   const spaceIndex = trimmed.indexOf(' ');
   const cmdName = spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
   const args = spaceIndex > 0 ? trimmed.substring(spaceIndex + 1).trim() : '';
-  
+
   const converter = LINUX_TO_WINDOWS[cmdName];
   if (converter) {
     if (typeof converter === 'function') {
@@ -56,7 +58,7 @@ function convertLinuxToWindowsCommand(command: string): string {
     }
     return args ? `${converter} ${args}` : converter;
   }
-  
+
   return command;
 }
 
@@ -127,19 +129,19 @@ async function showDiffAndConfirm(
   const fs = require('fs');
   const path = require('path');
   const absolutePath = path.join(workspaceRoot, filePath);
-  
+
   let originalContent = '';
   let isNewFile = false;
-  
+
   try {
     originalContent = fs.readFileSync(absolutePath, 'utf-8');
   } catch {
     isNewFile = true;
   }
-  
+
   // 生成简单的 diff
   const diff = generateSimpleDiff(originalContent, newContent, isNewFile);
-  
+
   // 计算添加和删除的行数
   let additions = 0;
   let deletions = 0;
@@ -147,12 +149,12 @@ async function showDiffAndConfirm(
     if (line.startsWith('+') && !line.startsWith('+++')) additions++;
     if (line.startsWith('-') && !line.startsWith('---')) deletions++;
   });
-  
+
   const requestId = `diff_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  
+
   return new Promise<boolean>((resolve) => {
     pendingDiffRequests.set(requestId, resolve);
-    
+
     // 发送 diff 预览到 webview
     chatPanelProvider?.postMessage({
       type: 'diff_preview',
@@ -163,7 +165,7 @@ async function showDiffAndConfirm(
       additions,
       deletions,
     });
-    
+
     // 60秒超时
     setTimeout(() => {
       if (pendingDiffRequests.has(requestId)) {
@@ -179,7 +181,7 @@ async function showDiffAndConfirm(
  */
 function generateSimpleDiff(original: string, modified: string, isNewFile: boolean): string {
   const Diff = require('diff');
-  
+
   if (isNewFile) {
     // 新文件，所有行都是添加
     const lines = modified.split('\n');
@@ -187,15 +189,15 @@ function generateSimpleDiff(original: string, modified: string, isNewFile: boole
     diff += lines.map(l => '+' + l).join('\n');
     return diff;
   }
-  
+
   // 使用 diff 库生成 unified diff
   const patch = Diff.createPatch('file', original, modified, '', '');
-  
+
   // 提取 diff 内容（跳过头部）
   const lines = patch.split('\n');
   const diffLines: string[] = [];
   let inHunk = false;
-  
+
   for (const line of lines) {
     if (line.startsWith('@@')) {
       inHunk = true;
@@ -207,7 +209,7 @@ function generateSimpleDiff(original: string, modified: string, isNewFile: boole
       }
     }
   }
-  
+
   return diffLines.join('\n');
 }
 
@@ -230,42 +232,42 @@ function handleDiffResponse(requestId: string, confirmed: boolean): void {
  */
 function wrapToolsWithConfirmation(toolRegistry: any, workspaceRoot: string): void {
   const toolsNeedingConfirmation = ['shell_command', 'skill_script'];
-  
+
   // 单独处理 write_file - 使用 diff 预览
   const writeFileTool = toolRegistry.get('write_file');
   if (writeFileTool) {
     const originalExecute = writeFileTool.execute.bind(writeFileTool);
-    
-    writeFileTool.execute = async function(params: Record<string, unknown>) {
+
+    writeFileTool.execute = async function (params: Record<string, unknown>) {
       const filePath = params.path as string;
       const content = params.content as string;
-      
+
       // 显示 diff 并请求确认
       const confirmed = await showDiffAndConfirm(filePath, content, workspaceRoot);
-      
+
       if (!confirmed) {
         return {
           success: false,
           output: '用户取消了文件写入操作',
         };
       }
-      
+
       return originalExecute(params);
     };
   }
-  
+
   // 其他工具使用 webview 确认
   for (const toolName of toolsNeedingConfirmation) {
     const originalTool = toolRegistry.get(toolName);
     if (!originalTool) continue;
 
     const originalExecute = originalTool.execute.bind(originalTool);
-    
-    originalTool.execute = async function(params: Record<string, unknown>) {
+
+    originalTool.execute = async function (params: Record<string, unknown>) {
       let title = '';
       let description = '';
       let details = '';
-      
+
       if (toolName === 'shell_command') {
         // 在 Windows 上转换 Linux 命令
         let displayCommand = params.command as string;
@@ -274,7 +276,7 @@ function wrapToolsWithConfirmation(toolRegistry: any, workspaceRoot: string): vo
           // 同时更新 params 中的命令，这样执行时就不需要再转换
           params.command = displayCommand;
         }
-        
+
         title = '执行命令';
         description = `Allow execute command?`;
         details = `命令: ${displayCommand}\n工作目录: ${params.cwd || '(默认)'}`;
@@ -313,6 +315,10 @@ export function activate(context: vscode.ExtensionContext) {
   chatPanelProvider = new ChatPanelProvider(context.extensionUri);
   conversationStorage = createConversationStorage(context, workspaceRoot);
 
+  // 初始化快捷命令管理器
+  quickCommandManager = createQuickCommandManager();
+  console.log('[Extension] 快捷命令管理器已初始化');
+
   // 注册 webview 提供者
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -324,7 +330,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 处理来自 webview 的消息
   chatPanelProvider.onMessage(async (message: UIMessage) => {
     console.log('[Extension] 收到 webview 消息:', message.type);
-    
+
     switch (message.type) {
       case 'ready':
         // Webview 准备好了，初始化 Agent 并尝试恢复对话
@@ -378,7 +384,7 @@ export function activate(context: vscode.ExtensionContext) {
           if (conv) {
             currentConversation = conv;
             await conversationStorage.setCurrentConversationId(conv.id);
-            
+
             // 恢复到 context manager
             if (agentEngine) {
               agentEngine.getContextManager().clear();
@@ -386,12 +392,12 @@ export function activate(context: vscode.ExtensionContext) {
                 agentEngine.getContextManager().addMessage(msg);
               }
             }
-            
+
             // 发送消息到 UI
             chatPanelProvider?.postMessage({
               type: 'conversation_loaded',
-              messages: conv.messages.map(m => ({ 
-                role: m.role, 
+              messages: conv.messages.map(m => ({
+                role: m.role,
                 content: m.content,
                 toolCall: m.toolCall,
               })),
@@ -497,6 +503,14 @@ export function activate(context: vscode.ExtensionContext) {
       case 'use_template':
         await handleUseTemplate(message.templateId);
         break;
+
+      case 'quick_command':
+        await handleQuickCommand(message.command, message.args, context);
+        break;
+
+      case 'get_command_suggestions':
+        await handleGetCommandSuggestions(message.query);
+        break;
     }
   });
 
@@ -599,7 +613,7 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   // 获取工作区根目录
   const workspaceRoot =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-  
+
   console.log('[Extension] 工作区根目录:', workspaceRoot);
   console.log('[Extension] workspaceFolders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
 
@@ -607,11 +621,11 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   const contextManager = createContextManager();
   const skillsManager = createSkillsManager(workspaceRoot);
   const toolRegistry = createDefaultTools(workspaceRoot, skillsManager);
-  
+
   // 初始化 MCP 集成
   if (!mcpIntegration) {
     mcpIntegration = createMCPIntegration(workspaceRoot, toolRegistry);
-    
+
     // 监听服务器状态变化
     mcpIntegration.on('serverStatus', (status) => {
       chatPanelProvider?.postMessage({
@@ -619,11 +633,11 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
         status,
       });
     });
-    
+
     try {
       await mcpIntegration.initialize();
       console.log('[Extension] MCP 集成初始化成功');
-      
+
       // 设置 MCP 工具确认回调
       setMCPConfirmCallback(requestConfirmation);
       console.log('[Extension] MCP 工具确认回调已设置');
@@ -632,10 +646,10 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
       // MCP 初始化失败不应该阻止整个系统启动
     }
   }
-  
+
   // 为写入和执行工具添加确认机制
   wrapToolsWithConfirmation(toolRegistry, workspaceRoot);
-  
+
   // 打印加载的 skills
   const loadedSkills = skillsManager.getAllSkills();
   console.log('[Extension] 已加载 Skills 数量:', loadedSkills.length);
@@ -655,18 +669,18 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
 
   try {
     const llmAdapter = createLLMAdapter(llmConfig);
-    
+
     // ✅ 调试：打印 LLM adapter 信息
     console.log('[Extension] LLM adapter 类型:', llmAdapter.constructor.name);
     console.log('[Extension] supportsNativeTools:', llmAdapter.supportsNativeTools());
-    
+
     agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter, workspaceRoot, mcpIntegration);
     console.log('Agent 引擎初始化成功');
-    
+
     // ✅ 调试：打印工具注册表信息
     console.log('[Extension] 工具注册表工具数量:', toolRegistry.list().length);
     console.log('[Extension] 已注册工具:', toolRegistry.list().map(t => t.name).join(', '));
-    
+
     const skills = skillsManager.getAllSkills();
     console.log('Skills 已加载:', skills.length, '个');
     for (const skill of skills) {
@@ -689,11 +703,11 @@ async function handleUserMessage(
 ): Promise<void> {
   console.log('[Extension] handleUserMessage 被调用, content:', content, '图片数:', images?.length || 0);
   console.log('[Extension] agentEngine 状态:', agentEngine ? '已初始化' : '未初始化');
-  
+
   if (!agentEngine) {
     console.log('[Extension] agentEngine 未初始化，尝试重新初始化...');
     await initializeAgent(context);
-    
+
     if (!agentEngine) {
       console.log('[Extension] 初始化失败，发送错误消息');
       chatPanelProvider?.postMessage({
@@ -708,7 +722,7 @@ async function handleUserMessage(
     console.log('[Extension] 开始处理消息:', content);
     // ✅ 设置处理状态
     isProcessing = true;
-    
+
     for await (const event of agentEngine.processMessage(content, currentMode, images)) {
       console.log('[Extension] Agent 事件:', event.type);
       chatPanelProvider?.postMessage({ type: 'agent_event', event });
@@ -743,7 +757,7 @@ async function saveConversation(
   }
 
   const history = agentEngine.getContextManager().getHistory();
-  
+
   // 如果没有当前对话，创建一个新的
   if (!currentConversation) {
     currentConversation = conversationStorage.createConversation();
@@ -788,8 +802,8 @@ async function restoreCurrentSession(): Promise<void> {
       console.log('[Extension] 从内存恢复当前会话，消息数:', history.length);
       chatPanelProvider?.postMessage({
         type: 'conversation_loaded',
-        messages: history.map(m => ({ 
-          role: m.role, 
+        messages: history.map(m => ({
+          role: m.role,
           content: m.content,
           toolCall: m.toolCall,
         })),
@@ -809,8 +823,8 @@ async function restoreCurrentSession(): Promise<void> {
         // 恢复消息到 UI
         chatPanelProvider?.postMessage({
           type: 'conversation_loaded',
-          messages: conversation.messages.map(m => ({ 
-            role: m.role, 
+          messages: conversation.messages.map(m => ({
+            role: m.role,
             content: m.content,
             toolCall: m.toolCall,
           })),
@@ -859,11 +873,11 @@ async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promi
     const config = vscode.workspace.getConfiguration('vscode-agent');
     const provider = config.get<string>('llm.provider') || 'gemini';
     const model = config.get<string>('llm.model') || 'gemini-2.0-flash';
-    
+
     // 检查 API 密钥是否存在
     const apiKey = await context.secrets.get(`${provider}-api-key`);
     const hasApiKey = !!apiKey;
-    
+
     // 发送当前设置到 webview
     chatPanelProvider?.postMessage({
       type: 'current_settings',
@@ -890,16 +904,16 @@ async function handleSaveSettings(
     if (apiKey) {
       await context.secrets.store(`${provider}-api-key`, apiKey);
     }
-    
+
     // 更新配置
     const config = vscode.workspace.getConfiguration('vscode-agent');
     await config.update('llm.provider', provider, vscode.ConfigurationTarget.Global);
     if (model) {
       await config.update('llm.model', model, vscode.ConfigurationTarget.Global);
     }
-    
+
     vscode.window.showInformationMessage(`✅ ${provider} 设置已保存`);
-    
+
     // 重新初始化 agent
     await initializeAgent(context);
   } catch (error) {
@@ -1000,7 +1014,7 @@ async function handleMCPStartServer(name: string): Promise<void> {
   try {
     await mcpIntegration.startServer(name);
     vscode.window.showInformationMessage(`MCP 服务器 ${name} 启动成功`);
-    
+
     // 刷新服务器列表
     await handleMCPListServers();
   } catch (error) {
@@ -1021,7 +1035,7 @@ async function handleMCPStopServer(name: string): Promise<void> {
   try {
     await mcpIntegration.stopServer(name);
     vscode.window.showInformationMessage(`MCP 服务器 ${name} 已停止`);
-    
+
     // 刷新服务器列表
     await handleMCPListServers();
   } catch (error) {
@@ -1042,7 +1056,7 @@ async function handleMCPRemoveServer(name: string): Promise<void> {
   try {
     await mcpIntegration.removeServer(name);
     vscode.window.showInformationMessage(`MCP 服务器 ${name} 已删除`);
-    
+
     // 刷新服务器列表
     await handleMCPListServers();
   } catch (error) {
@@ -1063,7 +1077,7 @@ async function handleMCPInstallServer(name: string): Promise<void> {
   try {
     await mcpIntegration.installFromMarketplace(name);
     vscode.window.showInformationMessage(`MCP 服务器 ${name} 安装成功`);
-    
+
     // 刷新服务器列表
     await handleMCPListServers();
   } catch (error) {
@@ -1084,7 +1098,7 @@ async function handleMCPAddServer(config: any): Promise<void> {
   try {
     await mcpIntegration.addServer(config);
     vscode.window.showInformationMessage(`MCP 服务器 ${config.name} 添加成功`);
-    
+
     // 刷新服务器列表
     await handleMCPListServers();
   } catch (error) {
@@ -1105,16 +1119,16 @@ async function handleMCPOpenConfig(): Promise<void> {
 
   const fs = require('fs');
   const path = require('path');
-  
+
   const configDir = path.join(workspaceRoot, '.vscode-agent');
   const configFilePath = path.join(configDir, 'mcp-servers.json');
-  
+
   try {
     // 确保目录存在
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true });
     }
-    
+
     // 如果配置文件不存在，创建默认配置
     if (!fs.existsSync(configFilePath)) {
       const defaultConfig = {
@@ -1138,7 +1152,7 @@ async function handleMCPOpenConfig(): Promise<void> {
       };
       fs.writeFileSync(configFilePath, JSON.stringify(defaultConfig, null, 2));
     }
-    
+
     // 打开配置文件
     const configPath = vscode.Uri.file(configFilePath);
     const document = await vscode.workspace.openTextDocument(configPath);
@@ -1188,7 +1202,7 @@ async function handleUseTemplate(templateId: string): Promise<void> {
 
   // 获取变量值
   const variables: Record<string, string> = {};
-  
+
   // 获取当前选中的代码
   const editor = vscode.window.activeTextEditor;
   if (editor) {
@@ -1213,7 +1227,7 @@ async function handleUseTemplate(templateId: string): Promise<void> {
 
   // 填充模板
   const content = promptTemplateManager.fillTemplate(template, variables);
-  
+
   chatPanelProvider?.postMessage({
     type: 'template_content',
     content: content,
@@ -1244,7 +1258,7 @@ async function executeTemplateCommand(templateId: string, context: vscode.Extens
 
   const selection = editor.selection;
   const selectedText = editor.document.getText(selection);
-  
+
   if (!selectedText) {
     vscode.window.showWarningMessage('请先选中代码');
     return;
@@ -1274,6 +1288,130 @@ async function executeTemplateCommand(templateId: string, context: vscode.Extens
   // 直接发送消息给 AI
   await handleUserMessage(content, context);
 }
+
+/**
+ * 处理快捷命令
+ */
+async function handleQuickCommand(
+  command: string,
+  args: string[],
+  context: vscode.ExtensionContext
+): Promise<void> {
+  if (!quickCommandManager) {
+    console.error('[Extension] QuickCommandManager 未初始化');
+    chatPanelProvider?.postMessage({
+      type: 'command_error',
+      error: '快捷命令系统未初始化',
+    });
+    return;
+  }
+
+  console.log(`[Extension] 执行快捷命令: /${command}`, args);
+
+  // 收集命令执行上下文
+  const commandContext: CommandContext = await collectCommandContext();
+
+  // 执行命令
+  const result = await quickCommandManager.executeCommand(command, commandContext, args);
+
+  if (!result.success) {
+    console.error('[Extension] 命令执行失败:', result.error);
+    chatPanelProvider?.postMessage({
+      type: 'command_error',
+      error: result.error || '命令执行失败',
+      warning: result.warning,
+    });
+    return;
+  }
+
+  // 如果有警告,显示给用户
+  if (result.warning) {
+    vscode.window.showWarningMessage(result.warning);
+  }
+
+  // 发送生成的提示给 Agent
+  if (result.prompt) {
+    console.log('[Extension] 发送命令生成的提示给 Agent');
+    await handleUserMessage(result.prompt, context);
+  }
+}
+
+/**
+ * 处理命令建议请求
+ */
+async function handleGetCommandSuggestions(query: string): Promise<void> {
+  if (!quickCommandManager) {
+    console.error('[Extension] QuickCommandManager 未初始化');
+    return;
+  }
+
+  const suggestions = quickCommandManager.getCommandSuggestions(query);
+
+  chatPanelProvider?.postMessage({
+    type: 'command_suggestions',
+    suggestions,
+  });
+}
+
+/**
+ * 收集命令执行上下文
+ */
+async function collectCommandContext(): Promise<CommandContext> {
+  const context: CommandContext = {};
+
+  // 获取当前编辑器和选中的代码
+  const editor = vscode.window.activeTextEditor;
+  if (editor) {
+    const selection = editor.selection;
+    const selectedText = editor.document.getText(selection);
+
+    if (selectedText) {
+      context.selectedCode = selectedText;
+    }
+
+    context.fileName = editor.document.fileName.split(/[/\\]/).pop() || '';
+    context.fileExtension = editor.document.languageId || '';
+    context.filePath = editor.document.fileName;
+
+    context.cursorPosition = {
+      line: selection.active.line,
+      column: selection.active.character,
+    };
+  }
+
+  // 获取剪贴板内容
+  try {
+    const clipboardText = await vscode.env.clipboard.readText();
+    if (clipboardText) {
+      context.clipboardContent = clipboardText;
+    }
+  } catch (error) {
+    console.warn('[Extension] 无法读取剪贴板:', error);
+  }
+
+  // 获取工作区根目录
+  context.workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+  // 获取 Git diff（用于 commit 命令）
+  try {
+    const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
+    if (gitExtension) {
+      const api = gitExtension.getAPI(1);
+      if (api.repositories.length > 0) {
+        const repo = api.repositories[0];
+        const diff = await repo.diff(true); // true = include staged changes
+        if (diff) {
+          context.gitDiff = diff;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[Extension] 无法获取 Git diff:', error);
+  }
+
+  return context;
+}
+
 
 export function deactivate() {
   console.log('VSCode Agent 扩展已停用');

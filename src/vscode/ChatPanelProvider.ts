@@ -53,7 +53,12 @@ export type UIMessage =
   | { type: 'get_templates' }
   | { type: 'templates_list'; templates: Array<{ id: string; name: string; icon: string; description: string; category: string }> }
   | { type: 'use_template'; templateId: string }
-  | { type: 'template_content'; content: string };
+  | { type: 'template_content'; content: string }
+  | { type: 'quick_command'; command: string; args: string[] }
+  | { type: 'get_command_suggestions'; query: string }
+  | { type: 'command_suggestions'; suggestions: Array<{ name: string; alias?: string; description: string; icon: string; category: string; example: string }> }
+  | { type: 'command_error'; error: string; warning?: string };
+
 
 /**
  * 聊天面板提供者
@@ -63,9 +68,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private _messageHandler?: (message: UIMessage) => void;
-   private _disposables: vscode.Disposable[] = [];
+  private _disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+  constructor(private readonly _extensionUri: vscode.Uri) { }
 
   /**
    * 解析 Webview
@@ -471,6 +476,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     
     /* 输入区域 */
     .input-container {
+      position: relative;
       padding: var(--spacing);
       background: var(--vscode-sideBar-background);
       border-top: 1px solid var(--vscode-panel-border);
@@ -721,6 +727,90 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
     .cancel-btn:hover {
       opacity: 0.9;
+    }
+    
+    /* 快捷命令建议 */
+    .command-suggestions {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: calc(var(--spacing) + 1px);
+      right: calc(var(--spacing) + 1px);
+      background: var(--vscode-sideBar-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      max-height: 280px;
+      overflow-y: auto;
+      display: none;
+      z-index: 1000;
+      animation: slideInUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideInUp {
+      from { transform: translateY(10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .command-suggestions.show {
+      display: block;
+    }
+    .command-item {
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .command-item:last-child {
+      border-bottom: none;
+    }
+    .command-item:hover, .command-item.selected {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .command-item-icon {
+      font-size: 18px;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(128, 128, 128, 0.1);
+      border-radius: 6px;
+    }
+    .command-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .command-item-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--vscode-foreground);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .command-item-alias {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      font-weight: normal;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .command-item-desc {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .command-item-example {
+      font-size: 11px;
+      color: var(--vscode-textLink-foreground);
+      opacity: 0.8;
+      font-family: var(--vscode-editor-font-family);
     }
     
     /* 代码块 */
@@ -1764,6 +1854,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   </div>
   
   <div class="input-container">
+    <div class="command-suggestions" id="commandSuggestions"></div>
     <div class="image-preview-container" id="imagePreviewContainer"></div>
     <div class="input-wrapper">
       <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
@@ -1979,6 +2070,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       var imageInput = document.getElementById('imageInput');
       var imagePreviewContainer = document.getElementById('imagePreviewContainer');
       var pendingImages = []; // 存储待发送的图片 { mimeType, data }
+      
+      // ✅ 快捷命令建议相关
+      var commandSuggestionsEl = document.getElementById('commandSuggestions');
+      var currentSuggestions = [];
+      var selectedSuggestionIndex = -1;
+      var lastQuery = '';
 
       // ✅ 保存状态的函数
       function saveState() {
@@ -2015,17 +2112,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
       }
 
-      function setProcessing(processing) {
-        isProcessing = processing;
-        sendBtn.disabled = processing;
-        if (processing) {
-          sendBtn.style.display = 'none';
-          cancelBtn.classList.add('show');
-        } else {
-          sendBtn.style.display = 'block';
-          cancelBtn.classList.remove('show');
-        }
-      }
+
 
       // 图片模态框相关
       var imageModal = document.getElementById('imageModal');
@@ -2210,6 +2297,33 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         
         var empty = document.getElementById('emptyState');
         if (empty) empty.remove();
+        
+        // ✅ 检测快捷命令
+        if (content.startsWith('/')) {
+          // 解析命令
+          var parts = content.substring(1).split(/\s+/);
+          var command = parts[0].toLowerCase();
+          var args = parts.slice(1);
+          
+          console.log('[ChatPanel] 检测到快捷命令:', command, args);
+          
+          // 显示用户输入的命令
+          addMessage('user', content);
+          
+          // 发送快捷命令消息
+          vscode.postMessage({
+            type: 'quick_command',
+            command: command,
+            args: args
+          });
+          
+          // 清空输入
+          inputEl.value = '';
+          vscode.postMessage({ type: 'save_input_text', text: '' });
+          setProcessing(true);
+          currentAssistantMessage = null;
+          return;
+        }
         
         // 显示用户消息（包含图片）
         addMessage('user', content, null, pendingImages);
@@ -2636,24 +2750,69 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         vscode.postMessage({ type: 'set_mode', mode: modeSelect.value });
       };
 
-      // 回车发送
-      inputEl.onkeydown = function(e) {
+      // 回车发送和命令导航
+      inputEl.addEventListener('keydown', function(e) {
+        // 如果建议框显示中
+        if (commandSuggestionsEl.classList.contains('show')) {
+          console.log('[ChatPanel] Suggestions visible, key:', e.key);
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedSuggestionIndex = (selectedSuggestionIndex + 1) % currentSuggestions.length;
+            updateSelectedSuggestion();
+            return;
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedSuggestionIndex = (selectedSuggestionIndex - 1 + currentSuggestions.length) % currentSuggestions.length;
+            updateSelectedSuggestion();
+            return;
+          } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            if (selectedSuggestionIndex >= 0) {
+              selectCommand(currentSuggestions[selectedSuggestionIndex]);
+            } else if (currentSuggestions.length > 0) {
+              selectCommand(currentSuggestions[0]);
+            }
+            return;
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            hideCommandSuggestions();
+            return;
+          }
+        }
+
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
           sendMessage();
         }
-      };
+      });
 
-      // 保存输入框文本（防抖）
+      // 保存输入框文本并检查命令
       var saveInputTimeout = null;
-      inputEl.oninput = function() {
+      inputEl.addEventListener('input', function() {
+        var value = inputEl.value;
+        console.log('[ChatPanel] Input changed:', value);
+        
+        // 检查是否在输入命令
+        if (value.startsWith('/')) {
+          // 只在斜杠后或者命令名称变化时请求建议
+          var query = value.split(/\s+/)[0];
+          console.log('[ChatPanel] Query:', query, 'LastQuery:', lastQuery);
+          if (query !== lastQuery) {
+            lastQuery = query;
+            console.log('[ChatPanel] Fetching suggestions for:', query);
+            vscode.postMessage({ type: 'get_command_suggestions', query: query });
+          }
+        } else {
+          hideCommandSuggestions();
+        }
+
         if (saveInputTimeout) {
           clearTimeout(saveInputTimeout);
         }
         saveInputTimeout = setTimeout(function() {
-          vscode.postMessage({ type: 'save_input_text', text: inputEl.value });
+          vscode.postMessage({ type: 'save_input_text', text: value });
         }, 300);
-      };
+      });
 
       // 处理来自扩展的消息
       window.addEventListener('message', function(event) {
@@ -2837,6 +2996,92 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         } else if (message.type === 'diff_preview') {
           // 显示 diff 预览对话框
           showDiffPreview(message.requestId, message.filePath, message.diff, message.isNewFile, message.additions, message.deletions);
+        } else if (message.type === 'command_error') {
+          // ✅ 处理快捷命令错误
+          console.log('[ChatPanel] 快捷命令错误:', message.error);
+          addMessage('error', message.error);
+          setProcessing(false);
+          
+          // 如果有警告，也显示
+          if (message.warning) {
+            addMessage('error', '⚠️ ' + message.warning);
+          }
+        } else if (message.type === 'command_suggestions') {
+          // ✅ 处理快捷命令建议
+          renderCommandSuggestions(message.suggestions);
+        }
+      });
+
+      // 快捷命令建议助手函数
+      function renderCommandSuggestions(suggestions) {
+        console.log('[ChatPanel] Rendering suggestions:', suggestions.length);
+        currentSuggestions = suggestions;
+        selectedSuggestionIndex = suggestions.length > 0 ? 0 : -1;
+        
+        if (suggestions.length === 0) {
+          console.log('[ChatPanel] No suggestions, hiding');
+          hideCommandSuggestions();
+          return;
+        }
+        
+        var html = suggestions.map(function(s, i) {
+          var aliasHtml = s.alias ? '<span class="command-item-alias">/' + s.alias + '</span>' : '';
+          var selectedClass = i === selectedSuggestionIndex ? 'selected' : '';
+          return '<div class="command-item ' + selectedClass + '" data-index="' + i + '">' +
+            '<div class="command-item-icon">' + s.icon + '</div>' +
+            '<div class="command-item-info">' +
+              '<div class="command-item-name">/' + s.name + ' ' + aliasHtml + '</div>' +
+              '<div class="command-item-desc">' + s.description + '</div>' +
+              '<div class="command-item-example">示例: ' + s.example + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+        
+        commandSuggestionsEl.innerHTML = html;
+        commandSuggestionsEl.classList.add('show');
+        console.log('[ChatPanel] Suggestions element shown');
+        
+        // 绑定点击事件
+        commandSuggestionsEl.querySelectorAll('.command-item').forEach(function(item) {
+          item.onclick = function() {
+            var index = parseInt(item.getAttribute('data-index'));
+            selectCommand(currentSuggestions[index]);
+          };
+        });
+      }
+
+      function updateSelectedSuggestion() {
+        commandSuggestionsEl.querySelectorAll('.command-item').forEach(function(item, i) {
+          if (i === selectedSuggestionIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest' });
+          } else {
+            item.classList.remove('selected');
+          }
+        });
+      }
+
+      function selectCommand(suggestion) {
+        var value = inputEl.value;
+        var parts = value.split(/\s+/);
+        parts[0] = '/' + suggestion.name;
+        inputEl.value = parts.join(' ') + ' ';
+        inputEl.focus();
+        hideCommandSuggestions();
+        lastQuery = parts[0];
+      }
+
+      function hideCommandSuggestions() {
+        commandSuggestionsEl.classList.remove('show');
+        currentSuggestions = [];
+        selectedSuggestionIndex = -1;
+        lastQuery = '';
+      }
+
+      // 点击外部隐藏建议
+      document.addEventListener('click', function(e) {
+        if (!inputEl.contains(e.target) && !commandSuggestionsEl.contains(e.target)) {
+          hideCommandSuggestions();
         }
       });
 
