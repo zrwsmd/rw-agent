@@ -873,7 +873,6 @@ async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promi
     const config = vscode.workspace.getConfiguration('vscode-agent');
     const provider = config.get<string>('llm.provider') || 'gemini';
     const model = config.get<string>('llm.model') || 'gemini-2.0-flash';
-    const baseUrl = config.get<string>('llm.baseUrl') || undefined;
 
     // 检查 API 密钥是否存在
     const apiKey = await context.secrets.get(`${provider}-api-key`);
@@ -885,7 +884,6 @@ async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promi
       provider,
       model,
       hasApiKey,
-      baseUrl,
     });
   } catch (error) {
     console.error('[Extension] 获取当前设置失败:', error);
@@ -913,9 +911,6 @@ async function handleSaveSettings(
     await config.update('llm.provider', provider, vscode.ConfigurationTarget.Global);
     if (model) {
       await config.update('llm.model', model, vscode.ConfigurationTarget.Global);
-    }
-    if (baseUrl !== undefined) {
-      await config.update('llm.baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
     }
 
     vscode.window.showInformationMessage(`✅ ${provider} 设置已保存`);
