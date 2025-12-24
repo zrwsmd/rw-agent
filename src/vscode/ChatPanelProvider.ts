@@ -2369,9 +2369,40 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
       function formatText(text) {
         if (!text) return '';
-        // 移除 Markdown 符号 - 使用 split/join 一次性替换
+        
+        // Remove all Markdown symbols using simple string operations
+        var backticks = String.fromCharCode(96) + String.fromCharCode(96) + String.fromCharCode(96);
+        text = text.split(backticks).join('');
         text = text.split('**').join('');
         text = text.split('*').join('');
+        text = text.split('####').join('');
+        text = text.split('###').join('');
+        text = text.split('##').join('');
+        text = text.split('#').join('');
+        text = text.split(String.fromCharCode(96)).join('');
+        text = text.split('>').join('');
+        text = text.split('- ').join('');
+        text = text.split('+ ').join('');
+        
+        // Remove numbered lists
+        var lines = text.split('\\n');
+        var result = [];
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          // Simple numbered list removal
+          if (line.indexOf('1. ') === 0) line = line.substring(3);
+          if (line.indexOf('2. ') === 0) line = line.substring(3);
+          if (line.indexOf('3. ') === 0) line = line.substring(3);
+          if (line.indexOf('4. ') === 0) line = line.substring(3);
+          if (line.indexOf('5. ') === 0) line = line.substring(3);
+          if (line.indexOf('6. ') === 0) line = line.substring(3);
+          if (line.indexOf('7. ') === 0) line = line.substring(3);
+          if (line.indexOf('8. ') === 0) line = line.substring(3);
+          if (line.indexOf('9. ') === 0) line = line.substring(3);
+          result.push(line.trim());
+        }
+        text = result.join('\\n');
+        
         return text.trim();
       }
 
@@ -2848,10 +2879,18 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             if (!currentAssistantMessage) {
               addMessage('assistant', evt.content, evt.content);
             } else {
-              // 更新复制按钮的内容
+              // 重新格式化整个消息内容，移除Markdown符号
               var copyBtn = currentAssistantMessage.querySelector('.copy-btn');
+              var rawText = currentAssistantMessage.innerText || currentAssistantMessage.textContent || '';
+              var formattedText = formatText(rawText);
+              
+              // 重新设置消息内容
+              currentAssistantMessage.innerHTML = formattedText.split('\\n').join('<br>');
+              
+              // 重新添加复制按钮
               if (copyBtn) {
-                copyBtn.setAttribute('data-content', currentAssistantMessage.innerText);
+                copyBtn.setAttribute('data-content', rawText);
+                currentAssistantMessage.appendChild(copyBtn);
               }
             }
             currentAssistantMessage = null;
