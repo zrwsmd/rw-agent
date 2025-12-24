@@ -452,7 +452,7 @@ export function activate(context: vscode.ExtensionContext) {
         break;
 
         case 'save_settings':
-          await handleSaveSettings(message.provider, message.apiKey, message.model, context, message.baseUrl);
+          await handleSaveSettings(message.provider, message.apiKey, message.model, context);
           break;
 
       case 'mcp_list_servers':
@@ -898,7 +898,6 @@ async function handleSaveSettings(
   apiKey: string,
   model: string,
   context: vscode.ExtensionContext,
-  baseUrl?: string
 ): Promise<void> {
   try {
     // 只有在提供了新的 API 密钥时才保存
