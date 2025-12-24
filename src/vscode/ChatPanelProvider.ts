@@ -1945,6 +1945,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               <select class="settings-select" id="providerSelect">
                 <option value="gemini">Google Gemini</option>
                 <option value="openai">OpenAI</option>
+                <option value="bailian">阿里百炼</option>
                 <option value="anthropic">Anthropic Claude</option>
               </select>
             </div>
@@ -2601,11 +2602,74 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             { value: 'o1-mini', label: 'o1-mini' }
           ],
           bailian: [
+            // 通义千问系列
+            { value: 'qwen-max', label: 'Qwen-Max (最强推理)' },
+            { value: 'qwen-max-0428', label: 'Qwen-Max-0428' },
+            { value: 'qwen-max-0403', label: 'Qwen-Max-0403' },
+            { value: 'qwen-max-0107', label: 'Qwen-Max-0107' },
+            { value: 'qwen-max-longcontext', label: 'Qwen-Max-Longcontext (长文本)' },
+            { value: 'qwen-plus', label: 'Qwen-Plus (平衡性能)' },
+            { value: 'qwen-plus-0828', label: 'Qwen-Plus-0828' },
+            { value: 'qwen-plus-0723', label: 'Qwen-Plus-0723' },
+            { value: 'qwen-turbo', label: 'Qwen-Turbo (快速响应)' },
+            { value: 'qwen-turbo-0624', label: 'Qwen-Turbo-0624' },
+            { value: 'qwen-turbo-0206', label: 'Qwen-Turbo-0206' },
+            
+            // 通义千问2.5系列
+            { value: 'qwen2.5-72b-instruct', label: 'Qwen2.5-72B-Instruct' },
+            { value: 'qwen2.5-32b-instruct', label: 'Qwen2.5-32B-Instruct' },
+            { value: 'qwen2.5-14b-instruct', label: 'Qwen2.5-14B-Instruct' },
+            { value: 'qwen2.5-7b-instruct', label: 'Qwen2.5-7B-Instruct' },
+            { value: 'qwen2.5-3b-instruct', label: 'Qwen2.5-3B-Instruct' },
+            { value: 'qwen2.5-1.5b-instruct', label: 'Qwen2.5-1.5B-Instruct' },
+            { value: 'qwen2.5-0.5b-instruct', label: 'Qwen2.5-0.5B-Instruct' },
+            
+            // 通义千问2系列
+            { value: 'qwen2-72b-instruct', label: 'Qwen2-72B-Instruct' },
+            { value: 'qwen2-57b-a14b-instruct', label: 'Qwen2-57B-A14B-Instruct' },
+            { value: 'qwen2-7b-instruct', label: 'Qwen2-7B-Instruct' },
+            { value: 'qwen2-1.5b-instruct', label: 'Qwen2-1.5B-Instruct' },
+            { value: 'qwen2-0.5b-instruct', label: 'Qwen2-0.5B-Instruct' },
+            
+            // 通义千问1.5系列
+            { value: 'qwen1.5-110b-chat', label: 'Qwen1.5-110B-Chat' },
+            { value: 'qwen1.5-72b-chat', label: 'Qwen1.5-72B-Chat' },
+            { value: 'qwen1.5-32b-chat', label: 'Qwen1.5-32B-Chat' },
+            { value: 'qwen1.5-14b-chat', label: 'Qwen1.5-14B-Chat' },
+            { value: 'qwen1.5-7b-chat', label: 'Qwen1.5-7B-Chat' },
+            { value: 'qwen1.5-4b-chat', label: 'Qwen1.5-4B-Chat' },
+            { value: 'qwen1.5-1.8b-chat', label: 'Qwen1.5-1.8B-Chat' },
+            { value: 'qwen1.5-0.5b-chat', label: 'Qwen1.5-0.5B-Chat' },
+            
+            // 代码专用模型
+            { value: 'qwen2.5-coder-32b-instruct', label: 'Qwen2.5-Coder-32B (代码)' },
+            { value: 'qwen2.5-coder-14b-instruct', label: 'Qwen2.5-Coder-14B (代码)' },
+            { value: 'qwen2.5-coder-7b-instruct', label: 'Qwen2.5-Coder-7B (代码)' },
+            { value: 'qwen2.5-coder-1.5b-instruct', label: 'Qwen2.5-Coder-1.5B (代码)' },
+            { value: 'codeqwen1.5-7b-chat', label: 'CodeQwen1.5-7B-Chat' },
+            
+            // 数学专用模型
+            { value: 'qwen2.5-math-72b-instruct', label: 'Qwen2.5-Math-72B (数学)' },
+            { value: 'qwen2.5-math-7b-instruct', label: 'Qwen2.5-Math-7B (数学)' },
+            { value: 'qwen2.5-math-1.5b-instruct', label: 'Qwen2.5-Math-1.5B (数学)' },
+            
+            // DeepSeek系列
             { value: 'deepseek-v3', label: 'DeepSeek-V3' },
             { value: 'deepseek-r1', label: 'DeepSeek-R1' },
-            { value: 'qwen-max', label: 'Qwen-Max' },
-            { value: 'qwen-plus', label: 'Qwen-Plus' },
-            { value: 'qwen-turbo', label: 'Qwen-Turbo' }
+            { value: 'deepseek-chat', label: 'DeepSeek-Chat' },
+            { value: 'deepseek-coder', label: 'DeepSeek-Coder' },
+            
+            // 其他开源模型
+            { value: 'llama3.1-405b-instruct', label: 'Llama3.1-405B-Instruct' },
+            { value: 'llama3.1-70b-instruct', label: 'Llama3.1-70B-Instruct' },
+            { value: 'llama3.1-8b-instruct', label: 'Llama3.1-8B-Instruct' },
+            { value: 'llama3-70b-instruct', label: 'Llama3-70B-Instruct' },
+            { value: 'llama3-8b-instruct', label: 'Llama3-8B-Instruct' },
+            { value: 'baichuan2-13b-chat-v1', label: 'Baichuan2-13B-Chat' },
+            { value: 'baichuan2-7b-chat-v1', label: 'Baichuan2-7B-Chat' },
+            { value: 'chatglm3-6b', label: 'ChatGLM3-6B' },
+            { value: 'yi-34b-chat-0205', label: 'Yi-34B-Chat' },
+            { value: 'yi-6b-chat', label: 'Yi-6B-Chat' }
           ],
           anthropic: [
             { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },

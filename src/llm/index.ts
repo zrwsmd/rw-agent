@@ -2,11 +2,13 @@ export { BaseLLMAdapter, estimateTokens } from './BaseLLMAdapter';
 export { OpenAIAdapter, OpenAIProvider } from './OpenAIAdapter';
 export { AnthropicAdapter, AnthropicProvider } from './AnthropicAdapter';
 export { GeminiAdapter, GeminiProvider } from './GeminiAdapter';
+export { BailianAdapter, BailianProvider } from './BailianAdapter';
 
 import { LLMProvider, LLMConfig, LLMAdapter } from '../types/llm';
 import { OpenAIProvider } from './OpenAIAdapter';
 import { AnthropicProvider } from './AnthropicAdapter';
 import { GeminiProvider } from './GeminiAdapter';
+import { BailianProvider } from './BailianAdapter';
 
 /**
  * 支持的提供商
@@ -15,6 +17,7 @@ const providers: Record<string, LLMProvider> = {
   openai: new OpenAIProvider(),
   anthropic: new AnthropicProvider(),
   gemini: new GeminiProvider(),
+  bailian: new BailianProvider(),
 };
 
 /**

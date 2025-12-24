@@ -42,7 +42,8 @@
           "enum": [
             "openai",
             "anthropic",
-            "gemini"
+            "gemini",
+            "bailian"
           ],
           "description": "LLM 提供商"
         },
