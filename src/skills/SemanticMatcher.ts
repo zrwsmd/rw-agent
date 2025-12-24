@@ -91,7 +91,7 @@ export interface SkillDescription {
 export class SemanticMatcher {
   private skillEmbeddings: Map<string, number[]> = new Map();
   private initialized = false;
-  private similarityThreshold = 0.18; // 降低阈值以支持中文（模型对中文理解有限）
+  private similarityThreshold = 0.5; // 提高阈值，减少误匹配
 
   /**
    * 初始化 - 预计算所有 skill 的 embedding
