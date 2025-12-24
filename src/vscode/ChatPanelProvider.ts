@@ -149,7 +149,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' https://slelguoygbfzlpylpxfs.supabase.co; connect-src https://slelguoygbfzlpylpxfs.supabase.co; img-src data: ${webview.cspSource};">
   <title>Agent Chat</title>
-  <script nonce="${nonce}" id="orchids-browser-logs" src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/scripts/orchids-browser-logs.js" data-orchids-project-id="bcbd37fb-db6d-43e5-8fa2-7b529810a565"></script>
   <style>
     :root {
       --radius: 8px;
@@ -1946,14 +1945,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               <select class="settings-select" id="providerSelect">
                 <option value="gemini">Google Gemini</option>
                 <option value="openai">OpenAI</option>
-                <option value="bailian">阿里百炼 (DeepSeek/Kimi)</option>
                 <option value="anthropic">Anthropic Claude</option>
               </select>
-            </div>
-            <div class="settings-field" id="baseUrlField" style="display:none">
-              <label class="settings-label">Base URL</label>
-              <input type="text" class="settings-input" id="baseUrlInput" placeholder="https://api.openai.com/v1">
-              <div class="settings-hint">自定义 API 基础路径</div>
             </div>
           <div class="settings-field">
             <label class="settings-label">API 密钥</label>
@@ -2600,15 +2593,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             modelSelect.appendChild(opt);
           }
           
-          // 显示/隐藏 Base URL 字段
-          if (provider === 'openai' || provider === 'bailian') {
-            baseUrlField.style.display = 'block';
-            if (provider === 'bailian' && !baseUrlInput.value) {
-              baseUrlInput.value = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-            }
-          } else {
-            baseUrlField.style.display = 'none';
-          }
+          
         }
         
         providerSelect.onchange = function() {
@@ -2645,7 +2630,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           var provider = providerSelect.value;
           var apiKey = apiKeyInput.value.trim();
           var model = modelSelect.value;
-          var baseUrl = baseUrlInput.value.trim();
           
           // 检查是否已有 API Key
           var apiKeyStatus = document.getElementById('apiKeyStatus');
@@ -2656,8 +2640,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               type: 'save_settings', 
               provider: provider,
               apiKey: apiKey, // 如果为空但有现有密钥，后端会保持现有密钥
-              model: model,
-              baseUrl: baseUrl
+              model: model
             });
             apiKeyInput.value = '';
             settingsOverlay.classList.remove('show');
@@ -2997,9 +2980,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             providerSelect.value = message.provider;
             updateModelOptions(message.provider);
             modelSelect.value = message.model;
-            if (message.baseUrl) {
-              baseUrlInput.value = message.baseUrl;
-            }
             
             // 更新 API Key 状态显示
           var apiKeyStatus = document.getElementById('apiKeyStatus');
