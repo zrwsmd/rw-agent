@@ -176,6 +176,10 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "obfuscate": "node scripts/obfuscate.js",
+    "build:obfuscated": "npm run compile && npm run obfuscate",
+    "build:release": "node scripts/build-release.js",
+    "package:release": "npm run build:release && cd release && vsce package",
     "lint": "eslint src --ext ts",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -188,9 +192,11 @@
     "@typescript-eslint/parser": "^6.13.0",
     "eslint": "^8.54.0",
     "fast-check": "^3.14.0",
+    "javascript-obfuscator": "^5.1.0",
     "prettier": "^3.1.0",
     "typescript": "^5.3.0",
-    "vitest": "^1.0.0"
+    "vitest": "^1.0.0",
+    "webpack-obfuscator": "^3.6.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.10.0",

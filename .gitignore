@@ -6,3 +6,9 @@ coverage/
 
 # VSCode Agent 对话历史
 .vscode-agent/
+
+# 混淆相关文件
+dist-obfuscated/
+package-obfuscated.json
+release/
+*-obfuscated.vsix
