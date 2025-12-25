@@ -41,6 +41,7 @@
           "default": "gemini",
           "enum": [
             "openai",
+            "openai-compatible",
             "anthropic",
             "gemini",
             "bailian"

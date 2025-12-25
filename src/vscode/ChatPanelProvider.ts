@@ -25,6 +25,7 @@ export type UIMessage =
     | { type: 'get_current_settings' }
     | { type: 'current_settings'; provider: string; model: string; hasApiKey: boolean; baseUrl?: string }
   | { type: 'ready' }
+  | { type: 'show_config_needed' }
   | { type: 'new_conversation' }
   | { type: 'load_conversation'; id: string }
   | { type: 'delete_conversation'; id: string }
@@ -1851,6 +1852,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       <div class="empty-state-icon">🤖</div>
       <div class="empty-state-text">开始对话吧！</div>
     </div>
+    <div class="empty-state" id="configState" style="display: none;">
+      <div class="empty-state-icon">⚙️</div>
+      <div class="empty-state-text">
+        <div style="margin-bottom: 8px;">需要完善配置才能开始对话</div>
+        <button class="settings-btn settings-btn-primary" onclick="document.getElementById('settingsBtn').click()">
+          打开设置
+        </button>
+      </div>
+    </div>
   </div>
   
   <div class="input-container">
@@ -1945,6 +1955,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               <select class="settings-select" id="providerSelect">
                 <option value="gemini">Google Gemini</option>
                 <option value="openai">OpenAI</option>
+                <option value="openai-compatible">OpenAI Compatible</option>
                 <option value="bailian">阿里百炼</option>
                 <option value="anthropic">Anthropic Claude</option>
               </select>
@@ -1985,6 +1996,13 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                 <option value="claude-3-haiku-20240307">claude-3-haiku</option>
               </optgroup>
             </select>
+            <input type="text" class="settings-input" id="modelInput" placeholder="输入自定义模型名称..." style="display: none;">
+            <div class="settings-hint" id="modelHint" style="display: none;">请输入完整的模型名称，例如：llama-3.1-70b-instruct</div>
+          </div>
+          <div class="settings-field" id="baseUrlField" style="display: none;">
+            <label class="settings-label">Base URL</label>
+            <input type="text" class="settings-input" id="baseUrlInput" placeholder="例如: http://localhost:11434/v1">
+            <div class="settings-hint">OpenAI Compatible 提供商的 API 端点地址</div>
           </div>
         </div>
       </div>
@@ -2581,6 +2599,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         var providerSelect = document.getElementById('providerSelect');
         var apiKeyInput = document.getElementById('apiKeyInput');
         var modelSelect = document.getElementById('modelSelect');
+        var modelInput = document.getElementById('modelInput');
+        var modelHint = document.getElementById('modelHint');
         var baseUrlField = document.getElementById('baseUrlField');
         var baseUrlInput = document.getElementById('baseUrlInput');
         
@@ -2591,15 +2611,25 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
             { value: 'gemini-3-flash-preview', label: 'gemini-3-flash-preview' },
             { value: 'gemini-3-pro-preview', label: 'gemini-3-pro-preview' },
-            { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
-            { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
-            { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro' }
           ],
           openai: [
             { value: 'gpt-4o', label: 'gpt-4o (推荐)' },
             { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
             { value: 'o1-preview', label: 'o1-preview' },
             { value: 'o1-mini', label: 'o1-mini' }
+          ],
+          'openai-compatible': [
+            // 常见的开源模型
+            { value: 'llama-3.1-70b-instruct', label: 'Llama 3.1 70B Instruct' },
+            { value: 'llama-3.1-8b-instruct', label: 'Llama 3.1 8B Instruct' },
+            { value: 'mixtral-8x7b-instruct', label: 'Mixtral 8x7B Instruct' },
+            { value: 'qwen2.5-72b-instruct', label: 'Qwen2.5 72B Instruct' },
+            { value: 'deepseek-v3', label: 'DeepSeek V3' },
+            { value: 'claude-3-haiku', label: 'Claude 3 Haiku' },
+            // 本地模型示例
+            { value: 'llama3.2', label: 'Llama 3.2 (Ollama)' },
+            { value: 'qwen2.5', label: 'Qwen 2.5 (Ollama)' },
+            { value: 'custom-model', label: '自定义模型 (请手动输入)' }
           ],
           bailian: [
             // 通义千问系列
@@ -2660,16 +2690,44 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         };
         
         function updateModelOptions(provider) {
-          modelSelect.innerHTML = '';
-          var options = modelOptions[provider] || modelOptions.gemini;
-          for (var i = 0; i < options.length; i++) {
-            var opt = document.createElement('option');
-            opt.value = options[i].value;
-            opt.textContent = options[i].label;
-            modelSelect.appendChild(opt);
+          if (provider === 'openai-compatible') {
+            // 对于 OpenAI Compatible，显示输入框而不是下拉框
+            modelSelect.style.display = 'none';
+            if (modelInput) {
+              modelInput.style.display = 'block';
+            }
+            if (modelHint) {
+              modelHint.style.display = 'block';
+            }
+          } else {
+            // 对于其他提供商，显示下拉框
+            modelSelect.style.display = 'block';
+            if (modelInput) {
+              modelInput.style.display = 'none';
+            }
+            if (modelHint) {
+              modelHint.style.display = 'none';
+            }
+            
+            // 更新下拉框选项
+            modelSelect.innerHTML = '';
+            var options = modelOptions[provider] || modelOptions.gemini;
+            for (var i = 0; i < options.length; i++) {
+              var opt = document.createElement('option');
+              opt.value = options[i].value;
+              opt.textContent = options[i].label;
+              modelSelect.appendChild(opt);
+            }
           }
           
-          
+          // 控制 Base URL 字段的显示
+          if (baseUrlField) {
+            if (provider === 'openai-compatible') {
+              baseUrlField.style.display = 'block';
+            } else {
+              baseUrlField.style.display = 'none';
+            }
+          }
         }
         
         providerSelect.onchange = function() {
@@ -2705,20 +2763,59 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         settingsSave.onclick = function() {
           var provider = providerSelect.value;
           var apiKey = apiKeyInput.value.trim();
-          var model = modelSelect.value;
+          var model;
+          
+          // 根据提供商类型获取模型名称
+          if (provider === 'openai-compatible') {
+            model = modelInput ? modelInput.value.trim() : '';
+          } else {
+            model = modelSelect.value;
+          }
+          
+          var baseUrl = baseUrlInput ? baseUrlInput.value.trim() : '';
           
           // 检查是否已有 API Key
           var apiKeyStatus = document.getElementById('apiKeyStatus');
           var hasExistingKey = apiKeyStatus.classList.contains('set');
+          
+          // 验证必需字段
+          if (provider === 'openai-compatible') {
+            if (!baseUrl) {
+              if (baseUrlInput) {
+                baseUrlInput.style.borderColor = 'var(--vscode-errorForeground)';
+                baseUrlInput.placeholder = '请输入 Base URL！';
+                setTimeout(function() {
+                  baseUrlInput.style.borderColor = '';
+                  baseUrlInput.placeholder = '例如: http://localhost:11434/v1';
+                }, 2000);
+              }
+              return;
+            }
+            
+            if (!model) {
+              if (modelInput) {
+                modelInput.style.borderColor = 'var(--vscode-errorForeground)';
+                modelInput.placeholder = '请输入模型名称！';
+                setTimeout(function() {
+                  modelInput.style.borderColor = '';
+                  modelInput.placeholder = '输入自定义模型名称...';
+                }, 2000);
+              }
+              return;
+            }
+          }
           
           if (apiKey || hasExistingKey) {
             vscode.postMessage({ 
               type: 'save_settings', 
               provider: provider,
               apiKey: apiKey, // 如果为空但有现有密钥，后端会保持现有密钥
-              model: model
+              model: model,
+              baseUrl: baseUrl || undefined
             });
             apiKeyInput.value = '';
+            if (baseUrlInput) baseUrlInput.value = '';
+            if (modelInput) modelInput.value = '';
             settingsOverlay.classList.remove('show');
           } else {
             // 提示用户输入密钥
@@ -3063,7 +3160,20 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             // 更新设置面板的当前值
             providerSelect.value = message.provider;
             updateModelOptions(message.provider);
-            modelSelect.value = message.model;
+            
+            // 根据提供商类型设置模型值
+            if (message.provider === 'openai-compatible') {
+              if (modelInput) {
+                modelInput.value = message.model || '';
+              }
+            } else {
+              modelSelect.value = message.model;
+            }
+            
+            // 更新 Base URL 字段
+            if (baseUrlInput && message.baseUrl) {
+              baseUrlInput.value = message.baseUrl;
+            }
             
             // 更新 API Key 状态显示
           var apiKeyStatus = document.getElementById('apiKeyStatus');
@@ -3076,6 +3186,18 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             apiKeyStatus.innerHTML = '<span>⚠️</span> 未设置';
             apiKeyInput.placeholder = '输入 API 密钥...';
           }
+        } else if (message.type === 'show_config_needed') {
+          // 显示配置需要完善的提示
+          var emptyState = document.getElementById('emptyState');
+          var configState = document.getElementById('configState');
+          if (emptyState) emptyState.style.display = 'none';
+          if (configState) configState.style.display = 'flex';
+        } else if (message.type === 'ready') {
+          // Agent 准备就绪，恢复正常状态
+          var emptyState = document.getElementById('emptyState');
+          var configState = document.getElementById('configState');
+          if (configState) configState.style.display = 'none';
+          if (emptyState) emptyState.style.display = 'flex';
         } else if (message.type === 'mcp_servers_list') {
           renderMCPServers(message.servers);
         } else if (message.type === 'mcp_server_status_changed') {

@@ -452,7 +452,7 @@ export function activate(context: vscode.ExtensionContext) {
         break;
 
         case 'save_settings':
-          await handleSaveSettings(message.provider, message.apiKey, message.model, context);
+          await handleSaveSettings(message.provider, message.apiKey, message.model, message.baseUrl, context);
           break;
 
       case 'mcp_list_servers':
@@ -623,7 +623,7 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   const toolRegistry = createDefaultTools(workspaceRoot, skillsManager);
 
   // 初始化 MCP 集成
-  // 如果已存在，先清理旧的集成
+  // 每次都重新创建，确保 MCP 工具注册到当前的 toolRegistry
   if (mcpIntegration) {
     try {
       await mcpIntegration.dispose();
@@ -635,25 +635,25 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   
   mcpIntegration = createMCPIntegration(workspaceRoot, toolRegistry);
 
-    // 监听服务器状态变化
-    mcpIntegration.on('serverStatus', (status) => {
-      chatPanelProvider?.postMessage({
-        type: 'mcp_server_status_changed',
-        status,
-      });
+  // 监听服务器状态变化
+  mcpIntegration.on('serverStatus', (status) => {
+    chatPanelProvider?.postMessage({
+      type: 'mcp_server_status_changed',
+      status,
     });
+  });
 
-    try {
-      await mcpIntegration.initialize();
-      console.log('[Extension] MCP 集成初始化成功');
+  try {
+    await mcpIntegration.initialize();
+    console.log('[Extension] MCP 集成初始化成功');
 
-      // 设置 MCP 工具确认回调
-      setMCPConfirmCallback(requestConfirmation);
-      console.log('[Extension] MCP 工具确认回调已设置');
-    } catch (error) {
-      console.error('[Extension] MCP 集成初始化失败:', error);
-      // MCP 初始化失败不应该阻止整个系统启动
-    }
+    // 设置 MCP 工具确认回调
+    setMCPConfirmCallback(requestConfirmation);
+    console.log('[Extension] MCP 工具确认回调已设置');
+  } catch (error) {
+    console.error('[Extension] MCP 集成初始化失败:', error);
+    // MCP 初始化失败不应该阻止整个系统启动
+  }
 
   // 为写入和执行工具添加确认机制
   wrapToolsWithConfirmation(toolRegistry, workspaceRoot);
@@ -668,12 +668,40 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
     console.log('[Extension]   脚本:', Array.from(skill.scripts.keys()));
   }
 
+  // 为非 OpenAI Compatible 提供商清除 baseUrl
   const llmConfig: LLMConfig = {
     provider,
     apiKey,
     model,
-    baseUrl,
+    baseUrl: provider === 'openai-compatible' ? baseUrl : undefined,
   };
+
+  // 验证配置完整性
+  if (provider === 'openai-compatible') {
+    if (!baseUrl || baseUrl.trim() === '') {
+      console.log('[Extension] OpenAI Compatible 提供商缺少 Base URL 配置');
+      vscode.window
+        .showWarningMessage(
+          'OpenAI Compatible 提供商需要配置 Base URL，请完善设置后重试',
+          '打开设置'
+        )
+        .then((selection) => {
+          if (selection === '打开设置') {
+            vscode.commands.executeCommand('vscode-agent.setApiKey');
+          }
+        });
+      
+      // 不要完全阻止初始化，让用户可以打开设置面板
+      console.log('[Extension] Agent 初始化暂停，等待用户配置');
+      
+      // 通知前端显示配置提示
+      chatPanelProvider?.postMessage({
+        type: 'show_config_needed'
+      });
+      
+      return;
+    }
+  }
 
   try {
     const llmAdapter = createLLMAdapter(llmConfig);
@@ -684,6 +712,11 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
 
     agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter, workspaceRoot, mcpIntegration);
     console.log('Agent 引擎初始化成功');
+    
+    // 通知前端恢复正常状态
+    chatPanelProvider?.postMessage({
+      type: 'ready'
+    });
 
     // ✅ 调试：打印工具注册表信息
     console.log('[Extension] 工具注册表工具数量:', toolRegistry.list().length);
@@ -695,9 +728,33 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
       console.log('  - Skill:', skill.name, '关键词:', skill.keywords.join(', '));
     }
   } catch (error) {
-    vscode.window.showErrorMessage(
-      `初始化 Agent 失败: ${error instanceof Error ? error.message : '未知错误'}`
-    );
+    const errorMessage = error instanceof Error ? error.message : '未知错误';
+    console.error('[Extension] Agent 初始化失败:', error);
+    
+    // 根据错误类型提供不同的处理建议
+    if (errorMessage.includes('Base URL')) {
+      vscode.window.showErrorMessage(
+        `配置错误: ${errorMessage}`,
+        '打开设置'
+      ).then((selection) => {
+        if (selection === '打开设置') {
+          vscode.commands.executeCommand('vscode-agent.setApiKey');
+        }
+      });
+    } else if (errorMessage.includes('API')) {
+      vscode.window.showErrorMessage(
+        `API 配置错误: ${errorMessage}`,
+        '检查设置'
+      ).then((selection) => {
+        if (selection === '检查设置') {
+          vscode.commands.executeCommand('vscode-agent.setApiKey');
+        }
+      });
+    } else {
+      vscode.window.showErrorMessage(
+        `初始化 Agent 失败: ${errorMessage}`
+      );
+    }
   }
 }
 
@@ -881,6 +938,7 @@ async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promi
     const config = vscode.workspace.getConfiguration('vscode-agent');
     const provider = config.get<string>('llm.provider') || 'gemini';
     const model = config.get<string>('llm.model') || 'gemini-2.0-flash';
+    const baseUrl = config.get<string>('llm.baseUrl') || '';
 
     // 检查 API 密钥是否存在
     const apiKey = await context.secrets.get(`${provider}-api-key`);
@@ -892,6 +950,7 @@ async function handleGetCurrentSettings(context: vscode.ExtensionContext): Promi
       provider,
       model,
       hasApiKey,
+      baseUrl,
     });
   } catch (error) {
     console.error('[Extension] 获取当前设置失败:', error);
@@ -905,6 +964,7 @@ async function handleSaveSettings(
   provider: string,
   apiKey: string,
   model: string,
+  baseUrl: string | undefined,
   context: vscode.ExtensionContext,
 ): Promise<void> {
   try {
@@ -918,6 +978,16 @@ async function handleSaveSettings(
     await config.update('llm.provider', provider, vscode.ConfigurationTarget.Global);
     if (model) {
       await config.update('llm.model', model, vscode.ConfigurationTarget.Global);
+    }
+    
+    // 保存 Base URL（只对需要自定义 Base URL 的提供商）
+    if (provider === 'openai-compatible') {
+      if (baseUrl !== undefined) {
+        await config.update('llm.baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
+      }
+    } else {
+      // 对于其他提供商，清除 Base URL 配置
+      await config.update('llm.baseUrl', '', vscode.ConfigurationTarget.Global);
     }
 
     vscode.window.showInformationMessage(`✅ ${provider} 设置已保存`);
