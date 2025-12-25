@@ -980,15 +980,13 @@ async function handleSaveSettings(
       await config.update('llm.model', model, vscode.ConfigurationTarget.Global);
     }
     
-    // 保存 Base URL（只对需要自定义 Base URL 的提供商）
+    // 保存 Base URL（只对 OpenAI Compatible 提供商）
     if (provider === 'openai-compatible') {
       if (baseUrl !== undefined) {
         await config.update('llm.baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
       }
-    } else {
-      // 对于其他提供商，清除 Base URL 配置
-      await config.update('llm.baseUrl', '', vscode.ConfigurationTarget.Global);
     }
+    // 注意：不要清除其他提供商的 baseUrl 配置，以便用户切换回来时能恢复
 
     vscode.window.showInformationMessage(`✅ ${provider} 设置已保存`);
 
