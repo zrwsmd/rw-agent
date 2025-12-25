@@ -623,8 +623,17 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
   const toolRegistry = createDefaultTools(workspaceRoot, skillsManager);
 
   // 初始化 MCP 集成
-  if (!mcpIntegration) {
-    mcpIntegration = createMCPIntegration(workspaceRoot, toolRegistry);
+  // 如果已存在，先清理旧的集成
+  if (mcpIntegration) {
+    try {
+      await mcpIntegration.dispose();
+      console.log('[Extension] 已清理旧的 MCP 集成');
+    } catch (error) {
+      console.error('[Extension] 清理旧 MCP 集成失败:', error);
+    }
+  }
+  
+  mcpIntegration = createMCPIntegration(workspaceRoot, toolRegistry);
 
     // 监听服务器状态变化
     mcpIntegration.on('serverStatus', (status) => {
@@ -645,7 +654,6 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
       console.error('[Extension] MCP 集成初始化失败:', error);
       // MCP 初始化失败不应该阻止整个系统启动
     }
-  }
 
   // 为写入和执行工具添加确认机制
   wrapToolsWithConfirmation(toolRegistry, workspaceRoot);
