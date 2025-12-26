@@ -59,7 +59,7 @@ export type UIMessage =
   | { type: 'get_command_suggestions'; query: string }
   | { type: 'command_suggestions'; suggestions: Array<{ name: string; alias?: string; description: string; icon: string; category: string; example: string }> }
   | { type: 'command_error'; error: string; warning?: string }
-  | { type: 'start_new_conversation'; summary: string; summarizedCount: number; newConversationId: string; newTokenUsage: { current: number; limit: number; remaining: number; percentage: number }; pendingUserMessage?: string };
+  | { type: 'start_new_conversation'; summary: string; summarizedCount: number; newConversationId: string; newTokenUsage: { current: number; limit: number; remaining: number; percentage: number }; pendingUserMessage?: string; isOverflow?: boolean };
 
 
 /**
@@ -3348,22 +3348,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             
             // 显示 Token 使用区域
             tokenUsageEl.classList.add('show');
-          } else if (evt.type === 'context_overflow') {
-            // 显示历史记录过长的警告
-            var overflowDiv = document.createElement('div');
-            overflowDiv.className = 'message context-overflow-warning';
-            overflowDiv.innerHTML = 
-              '<div class="overflow-warning-header">' +
-                '<span class="overflow-warning-icon">⚠️</span>' +
-                '<span class="overflow-warning-title">历史记录过长</span>' +
-              '</div>' +
-              '<div class="overflow-warning-content">' +
-                '<div class="overflow-warning-info">' + evt.message + '</div>' +
-                '<div class="overflow-warning-stats">当前使用: ' + evt.summaryTokens + ' / ' + evt.tokenLimit + ' tokens</div>' +
-                '<div class="overflow-warning-tip">💡 点击左上角 "+" 按钮可以新开一个干净的对话窗口</div>' +
-              '</div>';
-            messagesEl.appendChild(overflowDiv);
-            messagesEl.scrollTop = messagesEl.scrollHeight;
           } else if (evt.type === 'context_summarized') {
             // 显示上下文总结信息
             var summaryDiv = document.createElement('div');
@@ -3538,6 +3522,24 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                 '<div class="context-summary-text">' + message.summary + '</div>' +
               '</div>';
             messagesEl.appendChild(summaryDiv);
+            
+            // 如果历史记录过长，显示警告
+            if (message.isOverflow) {
+              var overflowDiv = document.createElement('div');
+              overflowDiv.className = 'message context-overflow-warning';
+              overflowDiv.innerHTML = 
+                '<div class="overflow-warning-header">' +
+                  '<span class="overflow-warning-icon">⚠️</span>' +
+                  '<span class="overflow-warning-title">历史记录过长</span>' +
+                '</div>' +
+                '<div class="overflow-warning-content">' +
+                  '<div class="overflow-warning-info">历史记录已累积过多，当前使用 ' + 
+                    (message.newTokenUsage ? message.newTokenUsage.current : '?') + ' / ' + 
+                    (message.newTokenUsage ? message.newTokenUsage.limit : '?') + ' tokens</div>' +
+                  '<div class="overflow-warning-tip">💡 建议点击左上角 "+" 按钮新开一个干净的对话窗口</div>' +
+                '</div>';
+              messagesEl.appendChild(overflowDiv);
+            }
             
             // 如果有待处理的用户问题，自动发送
             if (message.pendingUserMessage) {

@@ -834,7 +834,8 @@ async function handleUserMessage(
             summarizedCount: event.summarizedCount,
             newConversationId: newConversation.id,
             newTokenUsage: newTokenUsage,
-            pendingUserMessage: event.pendingUserMessage // 传递待处理的用户问题
+            pendingUserMessage: event.pendingUserMessage,
+            isOverflow: event.isOverflow // 传递溢出标志
           });
           
           console.log('[Extension] 新对话已创建，ID:', newConversation.id);
