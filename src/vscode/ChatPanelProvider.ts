@@ -1984,6 +1984,51 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       color: var(--vscode-editor-foreground);
       white-space: pre-wrap;
     }
+
+    /* 历史记录过长警告样式 */
+    .message.context-overflow-warning {
+      background: linear-gradient(135deg, rgba(255, 150, 50, 0.2), rgba(255, 100, 50, 0.1));
+      border-left: 3px solid var(--vscode-terminal-ansiYellow);
+      padding: 12px;
+      margin: 10px 0;
+      border-radius: 8px;
+    }
+    
+    .overflow-warning-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .overflow-warning-icon {
+      font-size: 18px;
+    }
+    
+    .overflow-warning-title {
+      font-weight: 600;
+      color: var(--vscode-terminal-ansiYellow);
+    }
+    
+    .overflow-warning-info {
+      font-size: 13px;
+      color: var(--vscode-editor-foreground);
+      margin-bottom: 6px;
+    }
+    
+    .overflow-warning-stats {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 8px;
+    }
+    
+    .overflow-warning-tip {
+      font-size: 12px;
+      color: var(--vscode-terminal-ansiGreen);
+      padding: 8px;
+      background: rgba(100, 200, 100, 0.1);
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -3303,6 +3348,22 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             
             // 显示 Token 使用区域
             tokenUsageEl.classList.add('show');
+          } else if (evt.type === 'context_overflow') {
+            // 显示历史记录过长的警告
+            var overflowDiv = document.createElement('div');
+            overflowDiv.className = 'message context-overflow-warning';
+            overflowDiv.innerHTML = 
+              '<div class="overflow-warning-header">' +
+                '<span class="overflow-warning-icon">⚠️</span>' +
+                '<span class="overflow-warning-title">历史记录过长</span>' +
+              '</div>' +
+              '<div class="overflow-warning-content">' +
+                '<div class="overflow-warning-info">' + evt.message + '</div>' +
+                '<div class="overflow-warning-stats">当前使用: ' + evt.summaryTokens + ' / ' + evt.tokenLimit + ' tokens</div>' +
+                '<div class="overflow-warning-tip">💡 点击左上角 "+" 按钮可以新开一个干净的对话窗口</div>' +
+              '</div>';
+            messagesEl.appendChild(overflowDiv);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
           } else if (evt.type === 'context_summarized') {
             // 显示上下文总结信息
             var summaryDiv = document.createElement('div');

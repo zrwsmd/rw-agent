@@ -715,6 +715,21 @@ ${conversations.map((c, i) => `对话${i+1}:\n问：${c.question}\n答：${c.ans
       
       this.contextManager.applySummarization(summaryJson, 0);
       
+      // 检查总结后的token使用情况
+      const postSummaryUsage = this.contextManager.getTokenUsage();
+      console.log('[AgentEngine] 总结后token使用:', postSummaryUsage);
+      
+      // 如果总结后仍然超过80%，说明历史记录太长了，提示用户手动新开窗口
+      if (postSummaryUsage.percentage > 80) {
+        console.log('[AgentEngine] 历史记录过长，提示用户手动新开窗口');
+        yield {
+          type: 'context_overflow',
+          message: '历史记录已累积过多，建议手动新开一个对话窗口以获得更好的体验',
+          summaryTokens: postSummaryUsage.current,
+          tokenLimit: postSummaryUsage.limit
+        };
+      }
+      
       yield {
         type: 'context_summarized',
         summary: summaryJson,
