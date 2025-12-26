@@ -812,11 +812,11 @@ async function handleUserMessage(
           // 清空AgentEngine的上下文
           agentEngine.getContextManager().clear();
           
-          // 将总结作为assistant消息添加到新对话（这样会被发送给LLM）
+          // 将历史记录作为assistant消息添加到新对话
           const summaryMessage = {
             id: `summary_${Date.now()}`,
             role: 'assistant' as const,
-            content: `[历史总结] ${event.summary}`,
+            content: `[历史记录] ${event.summary}`,
             timestamp: Date.now()
           };
           

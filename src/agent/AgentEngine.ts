@@ -598,8 +598,8 @@ export class AgentEngineImpl implements IAgentEngine {
   }
 
   /**
-   * 执行上下文总结和新对话切换
-   * 累积历史总结：之前的总结 + 当前对话 = 新的累积总结
+   * 执行上下文总结
+   * 把对话压缩成简短的问答记录，累积保存
    */
   private async *performContextSummarization(pendingUserMessage?: string): AsyncIterable<AgentEvent> {
     console.log('[AgentEngine] ===== 开始上下文总结 =====');
@@ -612,46 +612,70 @@ export class AgentEngineImpl implements IAgentEngine {
     try {
       const { toSummarize, toKeep, previousSummary } = this.contextManager.getMessagesForSummarization(2);
       
-      // 提取当前对话的关键词
-      const allMessages = [...toSummarize, ...toKeep];
-      const topicKeywords = this.extractTopicKeywords(allMessages);
-      const currentRoundSummary = allMessages.length > 0 
-        ? `本轮对话(${allMessages.length}条)：${topicKeywords.join('、')}`
-        : '';
-      
-      // 累积总结：之前的 + 当前的
-      let accumulatedSummary: string;
+      // 解析之前的历史记录（JSON数组）
+      let historyRecords: Array<{q: string, a: string}> = [];
       if (previousSummary) {
-        accumulatedSummary = previousSummary + ' | ' + currentRoundSummary;
-        console.log('[AgentEngine] 累积历史总结');
-      } else {
-        accumulatedSummary = currentRoundSummary;
-        console.log('[AgentEngine] 首次总结');
+        try {
+          historyRecords = JSON.parse(previousSummary);
+          console.log('[AgentEngine] 已有历史记录数:', historyRecords.length);
+        } catch (e) {
+          console.log('[AgentEngine] 解析历史记录失败，重新开始');
+        }
       }
       
-      console.log('[AgentEngine] 累积总结:', accumulatedSummary);
-      
-      // 检查累积总结是否太长（超过token限制的50%）
-      const summaryTokens = this.contextManager.estimateTokens(accumulatedSummary);
-      const tokenLimit = this.contextManager.getModelTokenLimit();
-      if (summaryTokens > tokenLimit * 0.5) {
-        console.log('[AgentEngine] 累积总结过长，压缩历史');
-        accumulatedSummary = `历史摘要(已压缩) | ${currentRoundSummary}`;
+      // 把当前要总结的对话压缩成问答对
+      // toSummarize 包含 user 和 assistant 消息交替
+      for (let i = 0; i < toSummarize.length; i++) {
+        const msg = toSummarize[i];
+        if (msg.role === 'user') {
+          // 找到对应的回答
+          const nextMsg = toSummarize[i + 1];
+          if (nextMsg && nextMsg.role === 'assistant') {
+            // 压缩问题和回答（各取前50字）
+            const q = msg.content.substring(0, 50);
+            const a = nextMsg.content.substring(0, 100);
+            historyRecords.push({ q, a });
+            i++; // 跳过已处理的回答
+          }
+        }
       }
+      
+      // 也把 toKeep 中的对话加入（因为新对话会清空）
+      for (let i = 0; i < toKeep.length; i++) {
+        const msg = toKeep[i];
+        if (msg.role === 'user') {
+          const nextMsg = toKeep[i + 1];
+          if (nextMsg && nextMsg.role === 'assistant') {
+            const q = msg.content.substring(0, 50);
+            const a = nextMsg.content.substring(0, 100);
+            historyRecords.push({ q, a });
+            i++;
+          }
+        }
+      }
+      
+      // 如果历史记录太多，保留最近的20条
+      if (historyRecords.length > 20) {
+        historyRecords = historyRecords.slice(-20);
+        console.log('[AgentEngine] 历史记录过多，保留最近20条');
+      }
+      
+      const summaryJson = JSON.stringify(historyRecords);
+      console.log('[AgentEngine] 累积历史记录数:', historyRecords.length);
       
       // 应用总结
-      this.contextManager.applySummarization(accumulatedSummary, 2);
+      this.contextManager.applySummarization(summaryJson, 0); // keepRecentCount=0，因为都已经压缩了
       
       yield {
         type: 'context_summarized',
-        summary: accumulatedSummary,
+        summary: summaryJson,
         summarizedCount: toSummarize.length,
         hasHistorySummary: !!previousSummary
       };
       
       yield {
         type: 'new_conversation_with_summary',
-        summary: accumulatedSummary,
+        summary: summaryJson,
         summarizedCount: toSummarize.length,
         pendingUserMessage: pendingUserMessage
       };

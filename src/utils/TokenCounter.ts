@@ -28,7 +28,7 @@ export const MODEL_TOKEN_LIMITS: Record<string, number> = {
   'gemini-1.5-pro': 2000000,
   
   // 百炼平台 - qwen-max设置很小的限制用于测试智能上下文管理
-  'qwen-max': 200, // 测试用：只能问2个问题左右
+  'qwen-max': 32768, // 测试用：只能问2个问题左右
   'qwen-plus': 32768,
   'qwen-turbo': 8192,
   'qwen2.5-72b-instruct': 32768,
@@ -58,7 +58,7 @@ export const MODEL_TOKEN_LIMITS: Record<string, number> = {
   'deepseek-chat': 32768,
   'deepseek-coder': 32768,
   'deepseek-v3': 64000,
-  'deepseek-v3.2': 64000,
+  'deepseek-v3.2': 200,
   'deepseek-v3.2-exp': 64000,
   'llama2-7b-chat-v2': 4096,
   'llama2-13b-chat-v2': 4096,

@@ -253,26 +253,26 @@ export class ContextManagerImpl implements IContextManager {
   /**
    * 获取需要总结的历史消息
    * 保留最近的几条消息，返回需要总结的部分
-   * 如果有之前的总结消息，会单独提取出来
+   * 历史总结以JSON数组格式存储
    */
   getMessagesForSummarization(keepRecentCount = 5): {
     toSummarize: Message[];
     toKeep: Message[];
     previousSummary: string | null;
   } {
-    // 查找之前的总结消息（assistant角色，以[历史总结]开头）
+    // 查找之前的历史总结（JSON数组格式）
     let previousSummary: string | null = null;
     
     for (const msg of this.messages) {
-      if (msg.role === 'assistant' && msg.content.startsWith('[历史总结]')) {
-        previousSummary = msg.content.replace('[历史总结] ', '');
-        console.log('[ContextManager] 找到历史总结，长度:', previousSummary.length);
+      if (msg.role === 'assistant' && msg.content.startsWith('[历史记录]')) {
+        previousSummary = msg.content.replace('[历史记录] ', '');
+        console.log('[ContextManager] 找到历史记录');
       }
     }
     
-    // 过滤掉总结消息，只保留普通对话消息
+    // 过滤掉历史总结消息，只保留普通对话消息
     const normalMessages = this.messages.filter(
-      msg => !(msg.role === 'assistant' && msg.content.startsWith('[历史总结]'))
+      msg => !(msg.role === 'assistant' && msg.content.startsWith('[历史记录]'))
     );
     
     if (normalMessages.length <= keepRecentCount) {
@@ -287,8 +287,6 @@ export class ContextManagerImpl implements IContextManager {
     const toSummarize = normalMessages.slice(0, splitIndex);
     const toKeep = normalMessages.slice(splitIndex);
     
-    console.log('[ContextManager] 总结分析: toSummarize=' + toSummarize.length + ', toKeep=' + toKeep.length + ', hasPrevSummary=' + !!previousSummary);
-    
     return {
       toSummarize,
       toKeep,
@@ -298,23 +296,23 @@ export class ContextManagerImpl implements IContextManager {
 
   /**
    * 应用上下文总结
-   * 把累积的总结作为assistant消息保存，保留最近的消息
+   * 把历史记录以JSON数组格式保存
    */
   applySummarization(summary: string, keepRecentCount = 5): void {
     const { toKeep } = this.getMessagesForSummarization(keepRecentCount);
     
-    // 创建总结消息（使用assistant角色，这样会被包含在上下文中发送给LLM）
+    // 创建历史记录消息
     const summaryMessage: Message = {
       id: `summary_${Date.now()}`,
       role: 'assistant',
-      content: `[历史总结] ${summary}`,
+      content: `[历史记录] ${summary}`,
       timestamp: Date.now()
     };
 
-    // 替换消息历史：总结消息 + 保留的最近消息
+    // 替换消息历史：历史记录 + 保留的最近消息
     this.messages = [summaryMessage, ...toKeep];
     
-    console.log('[ContextManager] 总结已应用，当前消息数:', this.messages.length);
+    console.log('[ContextManager] 历史记录已保存，当前消息数:', this.messages.length);
   }
 
   /**
