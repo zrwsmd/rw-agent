@@ -156,6 +156,13 @@ export class ContextManagerImpl implements IContextManager {
   }
 
   /**
+   * 估算指定文本的 token 数
+   */
+  estimateTokens(text: string): number {
+    return estimateTokens(text);
+  }
+
+  /**
    * 获取模型的 Token 限制
    */
   getModelTokenLimit(): number {
@@ -231,6 +238,100 @@ export class ContextManagerImpl implements IContextManager {
     }
 
     return deletedCount;
+  }
+
+  /**
+   * 检查是否需要智能上下文管理
+   * 当接近token限制时返回true
+   */
+  needsContextSummarization(threshold = 0.8): boolean {
+    const currentTokens = this.estimateCurrentTokens();
+    const limit = this.getModelTokenLimit();
+    return (currentTokens / limit) > threshold;
+  }
+
+  /**
+   * 获取需要总结的历史消息
+   * 保留最近的几条消息，返回需要总结的部分
+   * 注意：如果有之前的总结消息，会单独提取出来
+   */
+  getMessagesForSummarization(keepRecentCount = 5): {
+    toSummarize: Message[];
+    toKeep: Message[];
+    previousSummary: string | null;
+  } {
+    console.log('[ContextManager] ===== 开始分析消息用于总结 =====');
+    console.log('[ContextManager] 当前消息总数:', this.messages.length);
+    
+    // 先检查所有消息中是否有之前的总结
+    let previousSummary: string | null = null;
+    
+    for (let i = 0; i < this.messages.length; i++) {
+      const msg = this.messages[i];
+      console.log(`[ContextManager] 消息[${i}]: role=${msg.role}, content前50字=${msg.content.substring(0, 50)}...`);
+      
+      if (msg.role === 'system' && msg.content.startsWith('[上下文总结]')) {
+        previousSummary = msg.content.replace('[上下文总结] ', '');
+        console.log(`[ContextManager] 找到总结消息在索引 ${i}, 内容长度: ${previousSummary.length}`);
+        console.log(`[ContextManager] 总结内容前100字: ${previousSummary.substring(0, 100)}...`);
+      }
+    }
+    
+    // 过滤掉总结消息，只保留普通对话消息
+    const normalMessages = this.messages.filter(
+      msg => !(msg.role === 'system' && msg.content.startsWith('[上下文总结]'))
+    );
+    
+    console.log('[ContextManager] 过滤后普通消息数:', normalMessages.length);
+    
+    if (normalMessages.length <= keepRecentCount) {
+      console.log('[ContextManager] 普通消息数量不足，无需总结');
+      return { 
+        toSummarize: [], 
+        toKeep: normalMessages, 
+        previousSummary 
+      };
+    }
+
+    const splitIndex = normalMessages.length - keepRecentCount;
+    const toSummarize = normalMessages.slice(0, splitIndex);
+    const toKeep = normalMessages.slice(splitIndex);
+    
+    console.log('[ContextManager] 总结分析结果:', {
+      totalMessages: this.messages.length,
+      normalMessages: normalMessages.length,
+      toSummarize: toSummarize.length,
+      toKeep: toKeep.length,
+      hasPreviousSummary: !!previousSummary,
+      previousSummaryLength: previousSummary?.length || 0
+    });
+    console.log('[ContextManager] ===== 消息分析完成 =====');
+    
+    return {
+      toSummarize,
+      toKeep,
+      previousSummary
+    };
+  }
+
+  /**
+   * 应用上下文总结
+   * 用总结替换旧消息，保留最近的消息
+   * 如果有之前的总结，会累积到新总结中
+   */
+  applySummarization(summary: string, keepRecentCount = 5): void {
+    const { toKeep } = this.getMessagesForSummarization(keepRecentCount);
+    
+    // 创建总结消息
+    const summaryMessage: Message = {
+      id: `summary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      role: 'system',
+      content: `[上下文总结] ${summary}`,
+      timestamp: Date.now()
+    };
+
+    // 替换消息历史
+    this.messages = [summaryMessage, ...toKeep];
   }
 
   /**

@@ -58,7 +58,8 @@ export type UIMessage =
   | { type: 'quick_command'; command: string; args: string[] }
   | { type: 'get_command_suggestions'; query: string }
   | { type: 'command_suggestions'; suggestions: Array<{ name: string; alias?: string; description: string; icon: string; category: string; example: string }> }
-  | { type: 'command_error'; error: string; warning?: string };
+  | { type: 'command_error'; error: string; warning?: string }
+  | { type: 'start_new_conversation'; summary: string; summarizedCount: number; newConversationId: string; newTokenUsage: { current: number; limit: number; remaining: number; percentage: number } };
 
 
 /**
@@ -1822,6 +1823,167 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     .template-item:hover .template-item-arrow {
       opacity: 1;
     }
+
+    /* 上下文总结样式 */
+    .message.context-summary {
+      background: linear-gradient(135deg, rgba(100, 150, 255, 0.15), rgba(100, 150, 255, 0.05));
+      border-left: 3px solid var(--vscode-terminal-ansiBlue);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+    }
+    
+    .context-summary-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .context-summary-icon {
+      font-size: 16px;
+    }
+    
+    .context-summary-title {
+      font-weight: 600;
+      color: var(--vscode-terminal-ansiBlue);
+    }
+    
+    .context-summary-info {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 8px;
+    }
+    
+    .context-summary-details {
+      margin-top: 8px;
+    }
+    
+    .context-summary-details summary {
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--vscode-textLink-foreground);
+      padding: 4px 0;
+    }
+    
+    .context-summary-details summary:hover {
+      color: var(--vscode-textLink-activeForeground);
+    }
+    
+    .context-summary-text {
+      margin-top: 8px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--vscode-editor-foreground);
+      white-space: pre-wrap;
+    }
+
+    /* 新对话提示样式 */
+    .message.new-conversation-notice {
+      background: linear-gradient(135deg, rgba(255, 165, 0, 0.15), rgba(255, 165, 0, 0.05));
+      border-left: 3px solid var(--vscode-terminal-ansiYellow);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+    }
+    
+    .new-conversation-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .new-conversation-icon {
+      font-size: 16px;
+    }
+    
+    .new-conversation-title {
+      font-weight: 600;
+      color: var(--vscode-terminal-ansiYellow);
+    }
+    
+    .new-conversation-info {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 4px;
+    }
+    
+    .new-conversation-summary {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      opacity: 0.8;
+    }
+
+    /* 系统消息样式 */
+    .message.system-message {
+      background: linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(138, 43, 226, 0.05));
+      border-left: 3px solid var(--vscode-terminal-ansiMagenta);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+    }
+    
+    .system-message-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .system-message-icon {
+      font-size: 20px;
+    }
+    
+    .system-message-title {
+      font-weight: 600;
+      color: var(--vscode-terminal-ansiMagenta);
+      margin-bottom: 4px;
+    }
+    
+    .system-message-desc {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* 继承的上下文总结样式 */
+    .message.context-summary-carried {
+      background: linear-gradient(135deg, rgba(100, 200, 100, 0.15), rgba(100, 200, 100, 0.05));
+      border-left: 3px solid var(--vscode-terminal-ansiGreen);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+    }
+    
+    .context-summary-carried .context-summary-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .context-summary-carried .context-summary-title {
+      font-weight: 600;
+      color: var(--vscode-terminal-ansiGreen);
+    }
+    
+    .context-summary-carried .context-summary-info {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 8px;
+    }
+    
+    .context-summary-carried .context-summary-text {
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--vscode-editor-foreground);
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -3016,6 +3178,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           
           // 只显示思考过程和最终答案，隐藏工具调用细节
           if (evt.type === 'thought') {
+            // 如果是上下文总结相关的思考，设置处理状态
+            if (evt.content.includes('正在智能总结上下文')) {
+              setProcessing(true);
+            }
             addThought(evt.content);
           } else if (evt.type === 'answer') {
             if (!currentAssistantMessage) {
@@ -3137,6 +3303,28 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             
             // 显示 Token 使用区域
             tokenUsageEl.classList.add('show');
+          } else if (evt.type === 'context_summarized') {
+            // 显示上下文总结信息
+            var summaryDiv = document.createElement('div');
+            summaryDiv.className = 'message context-summary';
+            summaryDiv.innerHTML = 
+              '<div class="context-summary-header">' +
+                '<span class="context-summary-icon">📝</span>' +
+                '<span class="context-summary-title">智能上下文管理</span>' +
+              '</div>' +
+              '<div class="context-summary-content">' +
+                '<div class="context-summary-info">已总结 ' + evt.summarizedCount + ' 条历史消息，为新对话腾出空间</div>' +
+                '<details class="context-summary-details">' +
+                  '<summary>查看总结内容</summary>' +
+                  '<div class="context-summary-text">' + evt.summary + '</div>' +
+                '</details>' +
+              '</div>';
+            messagesEl.appendChild(summaryDiv);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            saveState();
+            
+            // 总结完成，恢复UI状态
+            setProcessing(false);
           }
           // action, observation, plan, step_complete 等技术细节不显示
         } else if (message.type === 'conversation_list') {
@@ -3198,6 +3386,103 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           var configState = document.getElementById('configState');
           if (configState) configState.style.display = 'none';
           if (emptyState) emptyState.style.display = 'flex';
+        } else if (message.type === 'start_new_conversation') {
+          // 开启新对话（保留当前界面作为历史记录）
+          console.log('[ChatPanel] 开启新对话，保留当前界面作为历史');
+          
+          // 在当前界面添加新对话提示
+          var newConversationDiv = document.createElement('div');
+          newConversationDiv.className = 'message new-conversation-notice';
+          newConversationDiv.innerHTML = 
+            '<div class="new-conversation-header">' +
+              '<span class="new-conversation-icon">🆕</span>' +
+              '<span class="new-conversation-title">已开启新对话</span>' +
+            '</div>' +
+            '<div class="new-conversation-content">' +
+              '<div class="new-conversation-info">由于对话历史较长，已自动开启新对话窗口继续交流</div>' +
+              '<div class="new-conversation-summary">上下文总结已传递到新对话中，您可以继续提问</div>' +
+            '</div>';
+          messagesEl.appendChild(newConversationDiv);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+          
+          // 禁用当前界面的输入（变为只读历史记录）
+          inputEl.disabled = true;
+          sendBtn.disabled = true;
+          inputEl.placeholder = '此对话已结束，请在新对话窗口中继续...';
+          
+          // 保存状态
+          saveState();
+          
+          // 可以选择性地打开新的VSCode窗口或标签页
+          // 这里我们保持在同一个面板中，但切换到新对话
+          setTimeout(function() {
+            // 清空界面，开始新对话
+            messagesEl.innerHTML = '';
+            
+            // 更新token显示为新对话的使用情况
+            var tokenUsageEl = document.getElementById('tokenUsage');
+            var tokenCurrentEl = document.getElementById('tokenCurrent');
+            var tokenLimitEl = document.getElementById('tokenLimit');
+            var tokenPercentageEl = document.getElementById('tokenPercentage');
+            var tokenFillEl = document.getElementById('tokenFill');
+            
+            if (message.newTokenUsage) {
+              tokenCurrentEl.textContent = message.newTokenUsage.current;
+              tokenLimitEl.textContent = message.newTokenUsage.limit;
+              tokenPercentageEl.textContent = Math.round(message.newTokenUsage.percentage);
+              tokenFillEl.style.width = message.newTokenUsage.percentage + '%';
+              
+              // 重置颜色样式
+              tokenFillEl.classList.remove('warning', 'danger');
+              if (message.newTokenUsage.percentage >= 90) {
+                tokenFillEl.classList.add('danger');
+              } else if (message.newTokenUsage.percentage >= 75) {
+                tokenFillEl.classList.add('warning');
+              }
+              
+              // 显示token使用区域
+              tokenUsageEl.classList.add('show');
+            }
+            
+            // 恢复输入功能
+            inputEl.disabled = false;
+            sendBtn.disabled = false;
+            inputEl.placeholder = '输入消息...';
+            
+            // 显示新对话开始提示（包含总结内容）
+            var welcomeDiv = document.createElement('div');
+            welcomeDiv.className = 'message system-message';
+            welcomeDiv.innerHTML = 
+              '<div class="system-message-content">' +
+                '<span class="system-message-icon">✨</span>' +
+                '<div class="system-message-text">' +
+                  '<div class="system-message-title">新对话已开始</div>' +
+                  '<div class="system-message-desc">Token使用量已重置为 ' + 
+                  (message.newTokenUsage ? message.newTokenUsage.current : '0') + ' / ' + 
+                  (message.newTokenUsage ? message.newTokenUsage.limit : '100') + '</div>' +
+                '</div>' +
+              '</div>';
+            messagesEl.appendChild(welcomeDiv);
+            
+            // 显示上一轮对话的总结内容
+            var summaryDiv = document.createElement('div');
+            summaryDiv.className = 'message context-summary-carried';
+            summaryDiv.innerHTML = 
+              '<div class="context-summary-header">' +
+                '<span class="context-summary-icon">📋</span>' +
+                '<span class="context-summary-title">上一轮对话记忆</span>' +
+              '</div>' +
+              '<div class="context-summary-content">' +
+                '<div class="context-summary-info">已从上一轮对话中继承以下重要信息：</div>' +
+                '<div class="context-summary-text">' + message.summary + '</div>' +
+              '</div>';
+            messagesEl.appendChild(summaryDiv);
+            
+            // 聚焦输入框
+            inputEl.focus();
+            
+            console.log('[ChatPanel] 新对话界面已准备就绪，总结内容已显示');
+          }, 3000); // 3秒后切换到新对话界面
         } else if (message.type === 'mcp_servers_list') {
           renderMCPServers(message.servers);
         } else if (message.type === 'mcp_server_status_changed') {

@@ -56,6 +56,14 @@ export class AgentEngineImpl implements IAgentEngine {
     this.mcpIntegration = mcpIntegration || null;
   }
 
+  /**
+   * 设置模型（用于ContextManager的token限制计算）
+   */
+  setModel(model: string): void {
+    this.contextManager.setModel(model);
+    console.log('[AgentEngine] 设置模型:', model);
+  }
+
   getSkillsManager(): SkillsManager | null {
     return this.skillsManager;
   }
@@ -72,29 +80,28 @@ export class AgentEngineImpl implements IAgentEngine {
     mode: AgentMode,
     images?: Array<{ mimeType: string; data: string }>
   ): AsyncIterable<AgentEvent> {
-    // 检查 Token 限制，必要时自动截断
-    if (this.contextManager.isNearTokenLimit(0.85)) {
-      const deletedCount = this.contextManager.autoTruncate(4000);
-      if (deletedCount > 0) {
-        console.log(`[AgentEngine] 自动截断了 ${deletedCount} 条旧消息以保持在 Token 限制内`);
-        yield {
-          type: 'thought',
-          content: `对话历史过长，已自动清理 ${deletedCount} 条旧消息`,
-        };
-      }
+    // ===== 预检查：在添加用户消息前检查（阈值95%）=====
+    // 如果已经非常接近限制，先进行上下文管理
+    const preCheckUsage = this.contextManager.getTokenUsage();
+    if (this.contextManager.needsContextSummarization(0.95)) {
+      console.log('[AgentEngine] 预检查触发：token使用率超过95%，先进行上下文管理');
+      yield* this.performContextSummarization();
+      console.log('[AgentEngine] 上下文管理完成，继续处理用户问题...');
     }
 
-    // 添加用户消息到上下文
+    // 添加用户消息到上下文（可能是新的上下文）
     this.contextManager.addMessage({
       id: this.generateId(),
       role: 'user',
       content: message,
       timestamp: Date.now(),
-      images: images, // 添加图片
+      images: images,
     });
 
-    // 发送 Token 使用信息
+    // 获取当前token使用情况
     const tokenUsage = this.contextManager.getTokenUsage();
+    
+    // 发送 Token 使用信息
     yield {
       type: 'token_usage',
       current: tokenUsage.current,
@@ -265,6 +272,9 @@ export class AgentEngineImpl implements IAgentEngine {
         content: fullResponse,
         timestamp: Date.now(),
       });
+
+      // 在AI回复后检查是否需要上下文管理
+      yield* this.checkContextAfterResponse();
     } catch (error) {
       console.error('[AgentEngine] 错误:', error);
       yield {
@@ -529,17 +539,187 @@ export class AgentEngineImpl implements IAgentEngine {
   }
 
   /**
-   * 设置当前模型（用于 Token 限制计算）
-   */
-  setModel(model: string): void {
-    this.contextManager.setModel(model);
-  }
-
-  /**
    * 生成唯一 ID
    */
   private generateId(): string {
     return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  /**
+   * 检查是否需要智能上下文管理（在AI回复后调用）
+   * 后检查：阈值85%，为下次对话做准备
+   */
+  private async *checkContextAfterResponse(): AsyncIterable<AgentEvent> {
+    if (this.contextManager.needsContextSummarization(0.85)) {
+      console.log('[AgentEngine] 后检查触发：token使用率超过85%，为下次对话做准备');
+      yield* this.performContextSummarization();
+    }
+  }
+
+  /**
+   * 执行上下文总结和新对话切换
+   * 累积历史总结，确保所有历史记录都被保留
+   */
+  private async *performContextSummarization(): AsyncIterable<AgentEvent> {
+    const tokenUsage = this.contextManager.getTokenUsage();
+    
+    console.log('[AgentEngine] ===== 开始智能上下文管理 =====');
+    console.log('[AgentEngine] Token使用情况:', tokenUsage);
+    
+    yield {
+      type: 'thought',
+      content: '对话历史较长，正在智能总结上下文...',
+    };
+
+    try {
+      const { toSummarize, toKeep, previousSummary } = this.contextManager.getMessagesForSummarization(2);
+      console.log('[AgentEngine] 需要总结的消息数量:', toSummarize.length);
+      console.log('[AgentEngine] 保留的消息数量:', toKeep.length);
+      console.log('[AgentEngine] 是否有之前的总结:', previousSummary ? '是' : '否');
+      if (previousSummary) {
+        console.log('[AgentEngine] 之前总结内容:', previousSummary.substring(0, 200) + '...');
+      }
+      
+      if (toSummarize.length > 0 || previousSummary) {
+        // 提取当前对话的关键词
+        const topicKeywords = this.extractTopicKeywords(toSummarize);
+        const currentSummary = toSummarize.length > 0 
+          ? `本轮对话涉及 ${toSummarize.length} 条消息，主要话题：${topicKeywords.join('、')}。`
+          : '';
+        
+        console.log('[AgentEngine] 当前轮总结:', currentSummary);
+        
+        // 累积总结：将之前的总结和当前总结合并
+        let accumulatedSummary: string;
+        if (previousSummary) {
+          accumulatedSummary = `【历史记录】${previousSummary}\n\n【最近对话】${currentSummary}`;
+          console.log('[AgentEngine] 累积模式：合并历史记录和当前对话');
+        } else {
+          accumulatedSummary = currentSummary;
+          console.log('[AgentEngine] 首次总结模式：无历史记录');
+        }
+        
+        console.log('[AgentEngine] 最终累积总结长度:', accumulatedSummary.length);
+        console.log('[AgentEngine] 累积总结内容:', accumulatedSummary);
+        
+        // 检查累积总结本身是否太长
+        const summaryTokens = this.contextManager.estimateTokens(accumulatedSummary);
+        const tokenLimit = this.contextManager.getModelTokenLimit();
+        const summaryPercentage = (summaryTokens / tokenLimit) * 100;
+        
+        console.log('[AgentEngine] 总结token数:', summaryTokens, '占比:', summaryPercentage.toFixed(1) + '%');
+        
+        // 如果累积总结本身超过了token限制的70%，说明历史太长了
+        if (summaryPercentage > 70) {
+          console.log('[AgentEngine] 累积总结过长，需要压缩历史记录');
+          
+          yield {
+            type: 'context_overflow',
+            message: '历史记录过长，部分早期对话将被压缩',
+            summaryTokens: summaryTokens,
+            tokenLimit: tokenLimit
+          };
+          
+          // 压缩历史总结，只保留最近的部分
+          accumulatedSummary = `【历史摘要】对话历史较长，已进行多轮总结。${currentSummary}`;
+        }
+        
+        this.contextManager.applySummarization(accumulatedSummary, 2);
+        
+        yield {
+          type: 'context_summarized',
+          summary: accumulatedSummary,
+          summarizedCount: toSummarize.length,
+          hasHistorySummary: !!previousSummary
+        };
+        
+        yield {
+          type: 'new_conversation_with_summary',
+          summary: accumulatedSummary,
+          summarizedCount: toSummarize.length
+        };
+        
+        console.log('[AgentEngine] ===== 上下文总结完成，历史记录已累积 =====');
+      }
+    } catch (error) {
+      console.error('[AgentEngine] 上下文总结失败:', error);
+      const deletedCount = this.contextManager.autoTruncate(30);
+      if (deletedCount > 0) {
+        yield {
+          type: 'thought',
+          content: `上下文总结失败，已自动清理 ${deletedCount} 条旧消息`,
+        };
+      }
+    }
+  }
+
+  /**
+   * 总结历史上下文
+   */
+  private async summarizeContext(messages: Array<{ role: string; content: string; timestamp: number }>): Promise<string> {
+    try {
+      console.log('[AgentEngine] 开始总结上下文，消息数量:', messages.length);
+      
+      // 构建总结提示
+      const conversationText = messages
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n\n');
+
+      console.log('[AgentEngine] 对话文本长度:', conversationText.length);
+
+      const summaryPrompt = `请总结以下对话的关键信息，包括：
+1. 主要讨论的话题和问题
+2. 重要的决定和结论
+3. 正在进行的任务或项目状态
+4. 需要记住的重要上下文信息
+
+对话内容：
+${conversationText}
+
+请用简洁的中文总结，保留所有重要信息：`;
+
+      // 使用LLM生成总结
+      const summaryMessages: LLMMessage[] = [
+        { role: 'user', content: summaryPrompt }
+      ];
+
+      console.log('[AgentEngine] 调用LLM生成总结...');
+      const response = await this.llmAdapter.complete(summaryMessages, {
+        maxTokens: 500, // 减少token使用
+        temperature: 0.3
+      });
+
+      console.log('[AgentEngine] LLM响应:', response ? response.substring(0, 100) + '...' : 'null');
+      return response || '无法生成上下文总结';
+    } catch (error) {
+      console.error('[AgentEngine] 上下文总结失败:', error);
+      // 返回简单的统计信息作为降级方案
+      const topicKeywords = this.extractTopicKeywords(messages);
+      return `对话涉及 ${messages.length} 条消息，主要话题包括：${topicKeywords.join('、')}`;
+    }
+  }
+
+  /**
+   * 提取话题关键词（降级方案）
+   */
+  private extractTopicKeywords(messages: Array<{ content: string }>): string[] {
+    const keywords = new Set<string>();
+    const commonWords = ['的', '了', '是', '在', '有', '和', '我', '你', '他', '她', '它', '这', '那', '一个', '可以', '需要', '如果', '但是', '因为', '所以'];
+    
+    messages.forEach(msg => {
+      const words = msg.content
+        .replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => word.length > 1 && !commonWords.includes(word));
+      
+      words.forEach(word => {
+        if (word.length >= 2) {
+          keywords.add(word);
+        }
+      });
+    });
+
+    return Array.from(keywords).slice(0, 10);
   }
 }
 

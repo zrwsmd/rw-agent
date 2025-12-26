@@ -26,6 +26,61 @@ export const MODEL_TOKEN_LIMITS: Record<string, number> = {
   'gemini-2.0-flash': 1000000,
   'gemini-1.5-flash': 1000000,
   'gemini-1.5-pro': 2000000,
+  
+  // 百炼平台 - qwen-max设置很小的限制用于测试智能上下文管理
+  'qwen-max': 200, // 测试用：只能问2个问题左右
+  'qwen-plus': 32768,
+  'qwen-turbo': 8192,
+  'qwen2.5-72b-instruct': 32768,
+  'qwen2.5-32b-instruct': 32768,
+  'qwen2.5-14b-instruct': 32768,
+  'qwen2.5-7b-instruct': 32768,
+  'qwen2.5-3b-instruct': 32768,
+  'qwen2.5-1.5b-instruct': 32768,
+  'qwen2.5-0.5b-instruct': 32768,
+  'qwen2-72b-instruct': 32768,
+  'qwen2-57b-a14b-instruct': 32768,
+  'qwen2-7b-instruct': 32768,
+  'qwen2-1.5b-instruct': 32768,
+  'qwen2-0.5b-instruct': 32768,
+  'qwen1.5-110b-chat': 32768,
+  'qwen1.5-72b-chat': 32768,
+  'qwen1.5-32b-chat': 32768,
+  'qwen1.5-14b-chat': 32768,
+  'qwen1.5-7b-chat': 32768,
+  'qwen1.5-4b-chat': 32768,
+  'qwen1.5-1.8b-chat': 32768,
+  'qwen1.5-0.5b-chat': 32768,
+  'qwen-72b-chat': 32768,
+  'qwen-14b-chat': 8192,
+  'qwen-7b-chat': 8192,
+  'qwen-1.8b-chat': 8192,
+  'deepseek-chat': 32768,
+  'deepseek-coder': 32768,
+  'deepseek-v3': 64000,
+  'deepseek-v3.2': 64000,
+  'deepseek-v3.2-exp': 64000,
+  'llama2-7b-chat-v2': 4096,
+  'llama2-13b-chat-v2': 4096,
+  'llama3-8b-instruct': 8192,
+  'llama3-70b-instruct': 8192,
+  'llama3.1-8b-instruct': 128000,
+  'llama3.1-70b-instruct': 128000,
+  'llama3.1-405b-instruct': 128000,
+  'llama3.2-1b-instruct': 128000,
+  'llama3.2-3b-instruct': 128000,
+  'llama3.2-11b-vision-instruct': 128000,
+  'llama3.2-90b-vision-instruct': 128000,
+  'baichuan2-13b-chat-v1': 4096,
+  'baichuan2-7b-chat-v1': 4096,
+  'chatglm3-6b': 32768,
+  'chatglm-6b-v2': 32768,
+  'qwen3-omni-flash-2025-12-01': 32768,
+  'qwen-omni-turbo': 32768,
+  'qwen-omni-turbo-realtime': 32768,
+  'qwen-omni-turbo-realtime-latest': 32768,
+  'qwen3-coder-plus': 32768,
+  'qwen-coder-plus': 32768,
 };
 
 /**
@@ -88,18 +143,23 @@ export class TokenCounter {
    * 获取模型的 Token 限制
    */
   static getModelLimit(model: string): number {
+    console.log('[TokenCounter] 检查模型限制:', model);
+    
     // 尝试精确匹配
     if (MODEL_TOKEN_LIMITS[model]) {
+      console.log('[TokenCounter] 精确匹配到限制:', MODEL_TOKEN_LIMITS[model]);
       return MODEL_TOKEN_LIMITS[model];
     }
     
     // 尝试前缀匹配
     for (const [key, limit] of Object.entries(MODEL_TOKEN_LIMITS)) {
       if (model.startsWith(key)) {
+        console.log('[TokenCounter] 前缀匹配到限制:', key, limit);
         return limit;
       }
     }
     
+    console.log('[TokenCounter] 使用默认限制:', DEFAULT_TOKEN_LIMIT);
     return DEFAULT_TOKEN_LIMIT;
   }
 

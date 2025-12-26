@@ -711,6 +711,7 @@ async function initializeAgent(context: vscode.ExtensionContext): Promise<void> 
     console.log('[Extension] supportsNativeTools:', llmAdapter.supportsNativeTools());
 
     agentEngine = createAgentEngine(contextManager, toolRegistry, llmAdapter, workspaceRoot, mcpIntegration);
+    agentEngine.setModel(model); // 设置模型用于token限制计算
     console.log('Agent 引擎初始化成功');
     
     // 通知前端恢复正常状态
@@ -790,7 +791,55 @@ async function handleUserMessage(
 
     for await (const event of agentEngine.processMessage(content, currentMode, images)) {
       console.log('[Extension] Agent 事件:', event.type);
-      chatPanelProvider?.postMessage({ type: 'agent_event', event });
+      
+      // 处理自动开启新对话事件
+      if (event.type === 'new_conversation_with_summary') {
+        console.log('[Extension] 检测到新对话请求，准备开启新对话...');
+        
+        // 先发送当前事件到UI（显示总结卡片）
+        chatPanelProvider?.postMessage({ type: 'agent_event', event });
+        
+        // 保存当前对话
+        await saveConversation(context);
+        
+        // 创建新对话
+        if (conversationStorage && agentEngine) {
+          const newConversation = conversationStorage.createConversation();
+          currentConversation = newConversation;
+          await conversationStorage.setCurrentConversationId(newConversation.id);
+          
+          // 清空AgentEngine的上下文
+          agentEngine.getContextManager().clear();
+          
+          // 将总结作为系统消息添加到新对话
+          const summaryMessage = {
+            id: `summary_${Date.now()}`,
+            role: 'system' as const,
+            content: `[上一轮对话总结] ${event.summary}`,
+            timestamp: Date.now()
+          };
+          
+          agentEngine.getContextManager().addMessage(summaryMessage);
+          newConversation.messages.push(summaryMessage);
+          
+          // 重置token统计
+          const newTokenUsage = agentEngine.getContextManager().getTokenUsage();
+          console.log('[Extension] 新对话token使用情况:', newTokenUsage);
+          
+          // 通知前端开启新对话（不清空当前界面）
+          chatPanelProvider?.postMessage({
+            type: 'start_new_conversation',
+            summary: event.summary,
+            summarizedCount: event.summarizedCount,
+            newConversationId: newConversation.id,
+            newTokenUsage: newTokenUsage
+          });
+          
+          console.log('[Extension] 新对话已创建，ID:', newConversation.id);
+        }
+      } else {
+        chatPanelProvider?.postMessage({ type: 'agent_event', event });
+      }
     }
     console.log('[Extension] 消息处理完成');
 

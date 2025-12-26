@@ -29,6 +29,9 @@ export type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'token'; content: string }
   | { type: 'skill'; name: string; description?: string }
+  | { type: 'context_summarized'; summary: string; summarizedCount: number; hasHistorySummary?: boolean }
+  | { type: 'new_conversation_with_summary'; summary: string; summarizedCount: number }
+  | { type: 'context_overflow'; message: string; summaryTokens: number; tokenLimit: number }
   | {
       type: 'token_usage';
       current: number;
@@ -48,4 +51,5 @@ export interface AgentEngine {
   ): AsyncIterable<AgentEvent>;
   cancel(): void;
   getState(): AgentState;
+  setModel(model: string): void;
 }
