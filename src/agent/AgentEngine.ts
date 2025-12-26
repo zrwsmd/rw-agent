@@ -273,6 +273,16 @@ export class AgentEngineImpl implements IAgentEngine {
         timestamp: Date.now(),
       });
 
+      // 发送更新后的 Token 使用信息（包含 AI 回复）
+      const updatedTokenUsage = this.contextManager.getTokenUsage();
+      yield {
+        type: 'token_usage',
+        current: updatedTokenUsage.current,
+        limit: updatedTokenUsage.limit,
+        remaining: updatedTokenUsage.remaining,
+        percentage: updatedTokenUsage.percentage,
+      };
+
       // 在AI回复后检查是否需要上下文管理
       yield* this.checkContextAfterResponse();
     } catch (error) {
@@ -353,6 +363,16 @@ export class AgentEngineImpl implements IAgentEngine {
         content: finalAnswer,
         timestamp: Date.now(),
       });
+
+      // 发送更新后的 Token 使用信息（包含 AI 回复）
+      const updatedTokenUsage = this.contextManager.getTokenUsage();
+      yield {
+        type: 'token_usage',
+        current: updatedTokenUsage.current,
+        limit: updatedTokenUsage.limit,
+        remaining: updatedTokenUsage.remaining,
+        percentage: updatedTokenUsage.percentage,
+      };
     }
 
     this.state = { status: 'idle' };
@@ -426,6 +446,16 @@ export class AgentEngineImpl implements IAgentEngine {
         content: finalAnswer,
         timestamp: Date.now(),
       });
+
+      // 发送更新后的 Token 使用信息（包含 AI 回复）
+      const updatedTokenUsage = this.contextManager.getTokenUsage();
+      yield {
+        type: 'token_usage',
+        current: updatedTokenUsage.current,
+        limit: updatedTokenUsage.limit,
+        remaining: updatedTokenUsage.remaining,
+        percentage: updatedTokenUsage.percentage,
+      };
     }
 
     this.state = { status: 'idle' };
@@ -477,6 +507,16 @@ export class AgentEngineImpl implements IAgentEngine {
         content: finalAnswer,
         timestamp: Date.now(),
       });
+
+      // 发送更新后的 Token 使用信息（包含 AI 回复）
+      const updatedTokenUsage = this.contextManager.getTokenUsage();
+      yield {
+        type: 'token_usage',
+        current: updatedTokenUsage.current,
+        limit: updatedTokenUsage.limit,
+        remaining: updatedTokenUsage.remaining,
+        percentage: updatedTokenUsage.percentage,
+      };
     }
 
     this.state = { status: 'idle' };
