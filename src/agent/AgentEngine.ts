@@ -80,11 +80,11 @@ export class AgentEngineImpl implements IAgentEngine {
     mode: AgentMode,
     images?: Array<{ mimeType: string; data: string }>
   ): AsyncIterable<AgentEvent> {
-    // ===== 预检查：在添加用户消息前检查（阈值95%）=====
+    // ===== 预检查：在添加用户消息前检查（阈值85%）=====
     // 如果已经非常接近限制，先进行上下文管理
     const preCheckUsage = this.contextManager.getTokenUsage();
-    if (this.contextManager.needsContextSummarization(0.95)) {
-      console.log('[AgentEngine] 预检查触发：token使用率超过95%，先进行上下文管理');
+    if (this.contextManager.needsContextSummarization(0.85)) {
+      console.log('[AgentEngine] 预检查触发：token使用率超过85%，先进行上下文管理');
       yield* this.performContextSummarization();
       console.log('[AgentEngine] 上下文管理完成，继续处理用户问题...');
     }
@@ -587,11 +587,11 @@ export class AgentEngineImpl implements IAgentEngine {
 
   /**
    * 检查是否需要智能上下文管理（在AI回复后调用）
-   * 后检查：阈值85%，为下次对话做准备
+   * 后检查：阈值80%，为下次对话做准备
    */
   private async *checkContextAfterResponse(): AsyncIterable<AgentEvent> {
-    if (this.contextManager.needsContextSummarization(0.85)) {
-      console.log('[AgentEngine] 后检查触发：token使用率超过85%，为下次对话做准备');
+    if (this.contextManager.needsContextSummarization(0.80)) {
+      console.log('[AgentEngine] 后检查触发：token使用率超过80%，为下次对话做准备');
       yield* this.performContextSummarization();
     }
   }
