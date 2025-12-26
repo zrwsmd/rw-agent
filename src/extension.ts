@@ -795,6 +795,7 @@ async function handleUserMessage(
       // 处理自动开启新对话事件
       if (event.type === 'new_conversation_with_summary') {
         console.log('[Extension] 检测到新对话请求，准备开启新对话...');
+        console.log('[Extension] 待处理的用户问题:', event.pendingUserMessage);
         
         // 先发送当前事件到UI（显示总结卡片）
         chatPanelProvider?.postMessage({ type: 'agent_event', event });
@@ -811,11 +812,11 @@ async function handleUserMessage(
           // 清空AgentEngine的上下文
           agentEngine.getContextManager().clear();
           
-          // 将总结作为系统消息添加到新对话
+          // 将总结作为assistant消息添加到新对话（这样会被发送给LLM）
           const summaryMessage = {
             id: `summary_${Date.now()}`,
-            role: 'system' as const,
-            content: `[上一轮对话总结] ${event.summary}`,
+            role: 'assistant' as const,
+            content: `[历史总结] ${event.summary}`,
             timestamp: Date.now()
           };
           
@@ -832,7 +833,8 @@ async function handleUserMessage(
             summary: event.summary,
             summarizedCount: event.summarizedCount,
             newConversationId: newConversation.id,
-            newTokenUsage: newTokenUsage
+            newTokenUsage: newTokenUsage,
+            pendingUserMessage: event.pendingUserMessage // 传递待处理的用户问题
           });
           
           console.log('[Extension] 新对话已创建，ID:', newConversation.id);

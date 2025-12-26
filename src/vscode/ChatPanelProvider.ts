@@ -59,7 +59,7 @@ export type UIMessage =
   | { type: 'get_command_suggestions'; query: string }
   | { type: 'command_suggestions'; suggestions: Array<{ name: string; alias?: string; description: string; icon: string; category: string; example: string }> }
   | { type: 'command_error'; error: string; warning?: string }
-  | { type: 'start_new_conversation'; summary: string; summarizedCount: number; newConversationId: string; newTokenUsage: { current: number; limit: number; remaining: number; percentage: number } };
+  | { type: 'start_new_conversation'; summary: string; summarizedCount: number; newConversationId: string; newTokenUsage: { current: number; limit: number; remaining: number; percentage: number }; pendingUserMessage?: string };
 
 
 /**
@@ -3478,8 +3478,26 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
               '</div>';
             messagesEl.appendChild(summaryDiv);
             
-            // 聚焦输入框
-            inputEl.focus();
+            // 如果有待处理的用户问题，自动发送
+            if (message.pendingUserMessage) {
+              console.log('[ChatPanel] 检测到待处理的用户问题，自动发送:', message.pendingUserMessage);
+              
+              // 显示用户问题
+              var userMsgDiv = document.createElement('div');
+              userMsgDiv.className = 'message user-message';
+              userMsgDiv.innerHTML = '<div class="message-content">' + message.pendingUserMessage + '</div>';
+              messagesEl.appendChild(userMsgDiv);
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+              
+              // 发送问题到后端处理
+              vscode.postMessage({
+                type: 'send_message',
+                content: message.pendingUserMessage
+              });
+            } else {
+              // 聚焦输入框
+              inputEl.focus();
+            }
             
             console.log('[ChatPanel] 新对话界面已准备就绪，总结内容已显示');
           }, 3000); // 3秒后切换到新对话界面

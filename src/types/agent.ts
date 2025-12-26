@@ -30,7 +30,7 @@ export type AgentEvent =
   | { type: 'token'; content: string }
   | { type: 'skill'; name: string; description?: string }
   | { type: 'context_summarized'; summary: string; summarizedCount: number; hasHistorySummary?: boolean }
-  | { type: 'new_conversation_with_summary'; summary: string; summarizedCount: number }
+  | { type: 'new_conversation_with_summary'; summary: string; summarizedCount: number; pendingUserMessage?: string }
   | { type: 'context_overflow'; message: string; summaryTokens: number; tokenLimit: number }
   | {
       type: 'token_usage';
