@@ -608,14 +608,14 @@ export class AgentEngineImpl implements IAgentEngine {
 
   /**
    * 执行上下文总结
-   * 把对话压缩成简短的问答记录，累积保存
+   * 用大模型把对话压缩成简短的问答记录，累积保存
    */
   private async *performContextSummarization(pendingUserMessage?: string): AsyncIterable<AgentEvent> {
     console.log('[AgentEngine] ===== 开始上下文总结 =====');
     
     yield {
       type: 'thought',
-      content: '对话历史较长，正在总结上下文...',
+      content: '对话历史较长，正在让AI总结上下文...',
     };
 
     try {
@@ -632,48 +632,88 @@ export class AgentEngineImpl implements IAgentEngine {
         }
       }
       
-      // 把当前要总结的对话压缩成问答对
-      // toSummarize 包含 user 和 assistant 消息交替
-      for (let i = 0; i < toSummarize.length; i++) {
-        const msg = toSummarize[i];
+      // 收集需要总结的对话，过滤掉工具调用的中间消息
+      const allMessages = [...toSummarize, ...toKeep];
+      const conversations: Array<{question: string, answer: string}> = [];
+      
+      let currentQuestion: string | null = null;
+      let lastAnswer: string | null = null;
+      
+      for (const msg of allMessages) {
         if (msg.role === 'user') {
-          // 找到对应的回答
-          const nextMsg = toSummarize[i + 1];
-          if (nextMsg && nextMsg.role === 'assistant') {
-            // 压缩问题和回答（各取前50字）
-            const q = msg.content.substring(0, 50);
-            const a = nextMsg.content.substring(0, 100);
-            historyRecords.push({ q, a });
-            i++; // 跳过已处理的回答
+          // 如果有上一轮的问答，先保存
+          if (currentQuestion && lastAnswer) {
+            conversations.push({ question: currentQuestion, answer: lastAnswer });
+          }
+          currentQuestion = msg.content;
+          lastAnswer = null;
+        } else if (msg.role === 'assistant') {
+          // 过滤掉工具调用的中间消息（通常很短或包含"使用工具"）
+          const content = msg.content;
+          if (content.length > 20 && 
+              !content.startsWith('使用工具') && 
+              !content.includes('正在搜索') &&
+              !content.includes('正在查询')) {
+            // 这是最终答案，覆盖之前的中间结果
+            lastAnswer = content;
           }
         }
       }
       
-      // 也把 toKeep 中的对话加入（因为新对话会清空）
-      for (let i = 0; i < toKeep.length; i++) {
-        const msg = toKeep[i];
-        if (msg.role === 'user') {
-          const nextMsg = toKeep[i + 1];
-          if (nextMsg && nextMsg.role === 'assistant') {
-            const q = msg.content.substring(0, 50);
-            const a = nextMsg.content.substring(0, 100);
-            historyRecords.push({ q, a });
-            i++;
+      // 保存最后一轮问答
+      if (currentQuestion && lastAnswer) {
+        conversations.push({ question: currentQuestion, answer: lastAnswer });
+      }
+      
+      console.log('[AgentEngine] 收集到有效对话数:', conversations.length);
+      
+      // 用大模型总结每轮对话
+      if (conversations.length > 0) {
+        const summaryPrompt = `请将以下对话总结成简短的问答记录。
+要求：
+1. 每条记录用一句话概括问题的核心
+2. 答案要提取最终结论，不要包含"通过搜索"、"使用工具"等过程描述
+3. 直接返回JSON数组格式，不要其他内容
+
+对话内容：
+${conversations.map((c, i) => `对话${i+1}:\n问：${c.question}\n答：${c.answer}`).join('\n\n')}
+
+返回格式：[{"q":"问题概括","a":"答案要点"},...]`;
+
+        try {
+          console.log('[AgentEngine] 调用大模型总结对话...');
+          const summaryResponse = await this.llmAdapter.complete([
+            { role: 'user', content: summaryPrompt }
+          ], { maxTokens: 500, temperature: 0.3 });
+          
+          if (summaryResponse) {
+            const jsonMatch = summaryResponse.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              const newRecords = JSON.parse(jsonMatch[0]) as Array<{q: string, a: string}>;
+              historyRecords.push(...newRecords);
+              console.log('[AgentEngine] 大模型总结完成，新增记录:', newRecords.length);
+            }
+          }
+        } catch (e) {
+          console.error('[AgentEngine] 大模型总结失败，使用简单截取:', e);
+          for (const conv of conversations) {
+            historyRecords.push({
+              q: conv.question.substring(0, 50),
+              a: conv.answer.substring(0, 100)
+            });
           }
         }
       }
       
-      // 如果历史记录太多，保留最近的20条
-      if (historyRecords.length > 20) {
-        historyRecords = historyRecords.slice(-20);
-        console.log('[AgentEngine] 历史记录过多，保留最近20条');
+      // 如果历史记录太多，保留最近的15条
+      if (historyRecords.length > 15) {
+        historyRecords = historyRecords.slice(-15);
       }
       
       const summaryJson = JSON.stringify(historyRecords);
       console.log('[AgentEngine] 累积历史记录数:', historyRecords.length);
       
-      // 应用总结
-      this.contextManager.applySummarization(summaryJson, 0); // keepRecentCount=0，因为都已经压缩了
+      this.contextManager.applySummarization(summaryJson, 0);
       
       yield {
         type: 'context_summarized',
