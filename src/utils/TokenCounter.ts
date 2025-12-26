@@ -20,6 +20,11 @@ export const MODEL_TOKEN_LIMITS: Record<string, number> = {
   'claude-3-opus-20240229': 200000,
   'claude-3-haiku-20240307': 200000,
   
+  // MiniMax (Anthropic Compatible)
+  'MiniMax-M2.1': 200000,
+  'MiniMax-M2.1-lightning': 200000,
+  'MiniMax-M2': 200000,
+  
   // Gemini
   'gemini-2.5-flash': 1000000,
   'gemini-2.5-pro': 1000000,

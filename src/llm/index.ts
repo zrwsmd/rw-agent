@@ -2,12 +2,14 @@ export { BaseLLMAdapter, estimateTokens } from './BaseLLMAdapter';
 export { OpenAIAdapter, OpenAIProvider } from './OpenAIAdapter';
 export { OpenAICompatibleAdapter, OpenAICompatibleProvider } from './OpenAICompatibleAdapter';
 export { AnthropicAdapter, AnthropicProvider } from './AnthropicAdapter';
+export { AnthropicCompatibleAdapter, AnthropicCompatibleProvider } from './AnthropicCompatibleAdapter';
 export { GeminiAdapter, GeminiProvider } from './GeminiAdapter';
 export { BailianAdapter, BailianProvider } from './BailianAdapter';
 
 import { LLMProvider, LLMConfig, LLMAdapter } from '../types/llm';
 import { OpenAIProvider } from './OpenAIAdapter';
 import { AnthropicProvider } from './AnthropicAdapter';
+import { AnthropicCompatibleProvider } from './AnthropicCompatibleAdapter';
 import { GeminiProvider } from './GeminiAdapter';
 import { BailianProvider } from './BailianAdapter';
 import { OpenAICompatibleProvider } from './OpenAICompatibleAdapter';
@@ -19,6 +21,7 @@ const providers: Record<string, LLMProvider> = {
   openai: new OpenAIProvider(),
   'openai-compatible': new OpenAICompatibleProvider(),
   anthropic: new AnthropicProvider(),
+  'anthropic-compatible': new AnthropicCompatibleProvider(),
   gemini: new GeminiProvider(),
   bailian: new BailianProvider(),
 };

@@ -2165,6 +2165,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                 <option value="openai-compatible">OpenAI Compatible</option>
                 <option value="bailian">阿里百炼</option>
                 <option value="anthropic">Anthropic Claude</option>
+                <option value="anthropic-compatible">Anthropic Compatible (MiniMax)</option>
               </select>
             </div>
           <div class="settings-field">
@@ -2893,6 +2894,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
             { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
             { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' }
+          ],
+          'anthropic-compatible': [
+            { value: 'MiniMax-M2.1', label: 'MiniMax-M2.1 (强大编程能力)' },
+            { value: 'MiniMax-M2.1-lightning', label: 'MiniMax-M2.1-lightning (快速响应)' },
+            { value: 'MiniMax-M2', label: 'MiniMax-M2 (智能体能力)' }
           ]
         };
         
@@ -2929,7 +2935,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           
           // 控制 Base URL 字段的显示
           if (baseUrlField) {
-            if (provider === 'openai-compatible') {
+            if (provider === 'openai-compatible' || provider === 'anthropic-compatible') {
               baseUrlField.style.display = 'block';
             } else {
               baseUrlField.style.display = 'none';
