@@ -187,7 +187,17 @@ export class FunctionCallingExecutor {
     const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
     
     // 构建系统消息（包含当前日期和 Skills 提示）
-    let systemContent = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
+    let systemContent = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。
+
+当前日期：${dateStr}
+
+工具选择指南：
+- 分析代码结构（如查看文件中有哪些函数、类、方法）：优先使用 lsp_query 工具的 symbols 操作
+- 查找函数/变量定义：使用 lsp_query 工具的 definitions 操作  
+- 查找代码引用：使用 lsp_query 工具的 references 操作
+- 搜索项目中的符号：使用 lsp_query 工具的 workspace_symbols 操作
+- 简单读取文件内容：使用 read_file 工具
+- 其他文件操作：使用相应的文件工具`;
     
     // ✅ 将 skillsPrompt 添加到系统消息中，而不是用户消息
     if (skillsPrompt) {

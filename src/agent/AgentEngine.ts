@@ -206,6 +206,12 @@ export class AgentEngineImpl implements IAgentEngine {
       'file', 'read', 'write', 'create', 'search', 'find',
       'grep', 'execute', 'run', 'command',
       '目录', '文件夹',
+      // LSP 相关关键词
+      '函数', '方法', '类', '接口', '变量', '符号',
+      '定义', '引用', '跳转', '导航',
+      'function', 'method', 'class', 'interface', 'variable', 'symbol',
+      'definition', 'reference', 'navigate', 'symbols',
+      '哪些函数', '有什么方法', '包含什么', '代码结构',
     ];
     
     const lowerMessage = message.toLowerCase();

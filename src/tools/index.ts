@@ -8,6 +8,7 @@ export { SkillScriptTool, createSkillScriptTool } from './SkillScriptTool';
 export { WebSearchTool } from './WebSearchTool';
 
 export { MCPTool, createMCPTool } from './MCPTool';
+export { LSPTool } from './LSPTool';
 export { ToolRegistryImpl, createToolRegistry } from './ToolRegistry';
 
 import { ToolRegistryImpl } from './ToolRegistry';
@@ -18,7 +19,7 @@ import { GrepSearchTool } from './GrepSearchTool';
 import { ShellCommandTool } from './ShellCommandTool';
 import { SkillScriptTool } from './SkillScriptTool';
 import { WebSearchTool } from './WebSearchTool';
-
+import { LSPTool } from './LSPTool';
 import { SkillsManager } from '../skills';
 
 /**
@@ -36,14 +37,15 @@ export function createDefaultTools(
   registry.register(new GrepSearchTool(workspaceRoot));
   registry.register(new ShellCommandTool(workspaceRoot));
   registry.register(new WebSearchTool());
+  registry.register(new LSPTool(workspaceRoot));
 
   // 注册 skill 相关工具
   const skillScriptTool = new SkillScriptTool();
-  
+
   if (skillsManager) {
     skillScriptTool.setSkillsManager(skillsManager);
   }
-  
+
   registry.register(skillScriptTool);
 
   return registry;
