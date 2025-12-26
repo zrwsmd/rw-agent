@@ -63,7 +63,7 @@ export const MODEL_TOKEN_LIMITS: Record<string, number> = {
   'deepseek-chat': 32768,
   'deepseek-coder': 32768,
   'deepseek-v3': 64000,
-  'deepseek-v3.2': 500,
+  'deepseek-v3.2': 64000,
   'deepseek-v3.2-exp': 64000,
   'llama2-7b-chat-v2': 4096,
   'llama2-13b-chat-v2': 4096,
