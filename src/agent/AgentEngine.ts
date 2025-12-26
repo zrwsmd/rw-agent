@@ -15,6 +15,7 @@ import { FunctionCallingExecutor } from './FunctionCallingExecutor';
 import { Plan } from '../types/plan';
 import { SkillsManager, Skill } from '../skills';
 import { MCPIntegration } from '../mcp';
+import { toolSemanticMatcher } from '../tools/ToolSemanticMatcher';
 
 /**
  * Agent 引擎实现 - 优化版
@@ -159,7 +160,7 @@ export class AgentEngineImpl implements IAgentEngine {
    * ✅ OPTIMIZATION: Combined tool check + skill caching (使用语义匹配)
    * This prevents Skills from being matched multiple times
    * 
-   * 修复：先执行语义匹配，再检查 MCP 工具，确保 skills 总是被匹配
+   * 使用语义匹配智能选择工具，而不是死板的关键词匹配
    */
   private async checkToolsAndCacheSkills(message: string): Promise<boolean> {
     // Reset cache
@@ -198,24 +199,15 @@ export class AgentEngineImpl implements IAgentEngine {
       return true;
     }
     
-    // Fallback to keyword detection for basic tool usage (file operations only)
-    const toolKeywords = [
-      '文件', '读取', '写入', '创建', '删除',
-      '搜索', '查找', '打开', '保存',
-      '执行', '运行', '命令', '终端', 'shell',
-      'file', 'read', 'write', 'create', 'search', 'find',
-      'grep', 'execute', 'run', 'command',
-      '目录', '文件夹',
-      // LSP 相关关键词
-      '函数', '方法', '类', '接口', '变量', '符号',
-      '定义', '引用', '跳转', '导航',
-      'function', 'method', 'class', 'interface', 'variable', 'symbol',
-      'definition', 'reference', 'navigate', 'symbols',
-      '哪些函数', '有什么方法', '包含什么', '代码结构',
-    ];
+    // ✅ 使用语义匹配检测工具需求
+    const toolMatch = toolSemanticMatcher.matchTool(message);
+    if (toolMatch && toolMatch.confidence >= 0.5) {
+      console.log(`[AgentEngine] 语义匹配到工具: ${toolMatch.toolName}${toolMatch.action ? ` (${toolMatch.action})` : ''}, 置信度: ${toolMatch.confidence.toFixed(2)}, 原因: ${toolMatch.reason}`);
+      return true;
+    }
     
-    const lowerMessage = message.toLowerCase();
-    return toolKeywords.some(keyword => lowerMessage.includes(keyword));
+    console.log('[AgentEngine] 未检测到工具需求，使用简单聊天模式');
+    return false;
   }
 
   /**
@@ -249,13 +241,21 @@ export class AgentEngineImpl implements IAgentEngine {
         const skillsPrompt = this.skillsManager.generateSkillsPrompt(message, this.cachedMatchedSkills);
         
         // Build system prompt with skills
-        systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
+        systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。
+
+当前日期：${dateStr}
+
+回复格式要求：使用正常文本，不要使用加粗、斜体等格式。`;
         systemPrompt += skillsPrompt;
         
         console.log('[AgentEngine] Skills 提示已注入到简单聊天模式');
       } else {
         // No skills matched, use default prompt
-        systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。\n\n当前日期：${dateStr}`;
+        systemPrompt = `你是一个智能助手，可以帮助用户完成各种任务。请用中文回答。
+
+当前日期：${dateStr}
+
+回复格式要求：使用正常文本，不要使用加粗、斜体等格式。`;
       }
       
       const messages = [

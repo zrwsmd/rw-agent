@@ -193,11 +193,15 @@ export class FunctionCallingExecutor {
 
 工具选择指南：
 - 分析代码结构（如查看文件中有哪些函数、类、方法）：优先使用 lsp_query 工具的 symbols 操作
-- 查找函数/变量定义：使用 lsp_query 工具的 definitions 操作  
-- 查找代码引用：使用 lsp_query 工具的 references 操作
-- 搜索项目中的符号：使用 lsp_query 工具的 workspace_symbols 操作
+- 查找函数/变量/属性定义（如"xxx在哪里定义的"、"xxx是什么"）：使用 lsp_query 工具的 definitions 操作  
+- 查找代码引用（如"xxx在哪些地方被调用/使用"）：使用 lsp_query 工具的 references 操作
+- 搜索项目中的符号（如"项目中有没有xxx类/函数"）：使用 lsp_query 工具的 workspace_symbols 操作
 - 简单读取文件内容：使用 read_file 工具
-- 其他文件操作：使用相应的文件工具`;
+- 其他文件操作：使用相应的文件工具
+
+重要：每次只选择一个最合适的工具，不要同时调用多个工具。对于代码分析任务，优先选择 lsp_query 而不是 read_file。
+
+回复格式要求：使用正常文本，不要使用加粗、斜体等格式。`;
     
     // ✅ 将 skillsPrompt 添加到系统消息中，而不是用户消息
     if (skillsPrompt) {
