@@ -374,6 +374,9 @@ export class AgentEngineImpl implements IAgentEngine {
         remaining: updatedTokenUsage.remaining,
         percentage: updatedTokenUsage.percentage,
       };
+
+      // 在AI回复后检查是否需要上下文管理
+      yield* this.checkContextAfterResponse();
     }
 
     this.state = { status: 'idle' };
@@ -457,6 +460,9 @@ export class AgentEngineImpl implements IAgentEngine {
         remaining: updatedTokenUsage.remaining,
         percentage: updatedTokenUsage.percentage,
       };
+
+      // 在AI回复后检查是否需要上下文管理
+      yield* this.checkContextAfterResponse();
     }
 
     this.state = { status: 'idle' };
@@ -518,6 +524,9 @@ export class AgentEngineImpl implements IAgentEngine {
         remaining: updatedTokenUsage.remaining,
         percentage: updatedTokenUsage.percentage,
       };
+
+      // 在AI回复后检查是否需要上下文管理
+      yield* this.checkContextAfterResponse();
     }
 
     this.state = { status: 'idle' };
