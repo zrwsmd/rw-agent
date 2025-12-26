@@ -2597,36 +2597,47 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       function formatText(text) {
         if (!text) return '';
         
-        // Remove all Markdown symbols using simple string operations
+        // Remove all Markdown symbols using comprehensive string operations
         var backticks = String.fromCharCode(96) + String.fromCharCode(96) + String.fromCharCode(96);
         text = text.split(backticks).join('');
+        
+        // Remove bold formatting more aggressively
         text = text.split('**').join('');
+        text = text.split('__').join('');
+        
+        // Remove italic formatting
         text = text.split('*').join('');
+        text = text.split('_').join('');
+        
+        // Remove headers
         text = text.split('####').join('');
         text = text.split('###').join('');
         text = text.split('##').join('');
         text = text.split('#').join('');
+        
+        // Remove inline code
         text = text.split(String.fromCharCode(96)).join('');
+        
+        // Remove blockquotes
         text = text.split('>').join('');
+        
+        // Remove list markers
         text = text.split('- ').join('');
         text = text.split('+ ').join('');
+        text = text.split('* ').join('');
         
-        // Remove numbered lists
+        // Remove numbered lists more comprehensively
         var lines = text.split('\\n');
         var result = [];
         for (var i = 0; i < lines.length; i++) {
-          var line = lines[i];
-          // Simple numbered list removal
-          if (line.indexOf('1. ') === 0) line = line.substring(3);
-          if (line.indexOf('2. ') === 0) line = line.substring(3);
-          if (line.indexOf('3. ') === 0) line = line.substring(3);
-          if (line.indexOf('4. ') === 0) line = line.substring(3);
-          if (line.indexOf('5. ') === 0) line = line.substring(3);
-          if (line.indexOf('6. ') === 0) line = line.substring(3);
-          if (line.indexOf('7. ') === 0) line = line.substring(3);
-          if (line.indexOf('8. ') === 0) line = line.substring(3);
-          if (line.indexOf('9. ') === 0) line = line.substring(3);
-          result.push(line.trim());
+          var line = lines[i].trim();
+          // Remove numbered list patterns
+          line = line.replace(/^\d+\.\s+/, '');
+          // Remove lettered list patterns
+          line = line.replace(/^[a-zA-Z]\.\s+/, '');
+          // Remove parenthetical numbered lists
+          line = line.replace(/^\(\d+\)\s+/, '');
+          result.push(line);
         }
         text = result.join('\\n');
         
